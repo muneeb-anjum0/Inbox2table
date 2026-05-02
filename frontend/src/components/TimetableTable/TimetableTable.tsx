@@ -118,6 +118,14 @@ const getDisplayFaculty = (item: TimetableItem): string => {
   return getCorrectedValue('faculty', item) || 'TBD';
 };
 
+const getSemesterLabel = (item: TimetableItem): string => {
+  return item.semester_key || item.semester_display || item.semester || 'Unknown';
+};
+
+const getSemesterKey = (item: TimetableItem): string => {
+  return item.semester_key || item.semester || 'Unknown';
+};
+
 // Helper function to validate and clean course title
 const getDisplayCourseTitle = (item: TimetableItem): string => {
   if (validateData(item.course_title)) {
@@ -136,7 +144,7 @@ const shouldHighlightRow = (item: TimetableItem): boolean => {
     getDisplayRoom(item),
     getDisplayTime(item),
     getDisplayCampus(item),
-    item.semester || ''
+    getSemesterLabel(item)
   ];
   return displayedTexts.some(text => text.toLowerCase().includes('cancelled'));
 };
@@ -157,7 +165,7 @@ const groupAndSortData = (items: TimetableItem[]) => {
 
   // Group by semester
   const grouped = items.reduce((acc, item) => {
-    const semester = item.semester || 'Unknown';
+    const semester = getSemesterLabel(item);
     if (!acc[semester]) {
       acc[semester] = [];
     }

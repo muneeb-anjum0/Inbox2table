@@ -34,10 +34,10 @@ logger = logging.getLogger(__name__)
 logging.getLogger('scraper.config').setLevel(logging.WARNING)
 logging.getLogger('database.supabase_client').setLevel(logging.WARNING)
 
-# Import after CORS setup
-from scraper.scheduler import run_once
+# Import configuration and environment before backend database initialization
 from scraper.config import settings
 from database.supabase_client import supabase_manager
+from scraper.scheduler import run_once
 
 def get_local_ip():
     """Get the local IP address dynamically"""
@@ -497,7 +497,7 @@ def get_config():
         
         # Return user-specific configuration
         safe_config = {
-            'gmail_query': user_settings.get('gmail_query_base', settings.gmail_query_base),
+            'gmail_query': settings.gmail_query_base,
             'semester_filter': user_settings.get('allowed_semesters', settings.allowed_semesters),
             'schedule_time': f"{settings.check_hour_local:02d}:{settings.check_minute_local:02d}",
             'timezone': user_settings.get('timezone', settings.tz),
@@ -556,6 +556,8 @@ def update_semesters():
 def scrape_now():
     """Run the scraper once and return results for the authenticated user"""
     try:
+        payload = request.get_json(silent=True)
+
         user, error_response, status_code = get_user_from_request()
         if error_response:
             return error_response, status_code
@@ -563,7 +565,7 @@ def scrape_now():
         logger.info(f"Starting manual scrape via API for user {user['email']}")
         
         # Check if force_refresh parameter is provided
-        force_refresh = request.json.get('force_refresh', False) if request.is_json else False
+        force_refresh = payload.get('force_refresh', False) if payload else False
         
         if force_refresh:
             logger.info(f"Force refresh requested - clearing cache for user {user['id']}")
@@ -590,10 +592,11 @@ def scrape_now():
         else:
             return jsonify({
                 'success': False,
-                'message': 'Scrape failed or no data found',
+                'message': result.get('message', 'Scrape failed or no data found') if result else 'Scrape failed or no data found',
                 'error': result.get('error') if result else 'Unknown error',
+                'data': result.get('data', []) if result else [],
                 'timestamp': datetime.now().isoformat()
-            }), 400
+            }), 200
             
     except Exception as e:
         logger.error(f"Error during scrape: {e}")
@@ -714,6 +717,9 @@ def get_status():
             'error': str(e),
             'timestamp': datetime.now().isoformat()
         }), 500
+
+
+# '/api/scrape/status' endpoint removed along with scrape_status module
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

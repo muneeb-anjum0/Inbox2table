@@ -1,5 +1,5 @@
 """
-Config & settings loaded from .env (robust).
+config.py
 """
 import os
 import logging
@@ -9,8 +9,15 @@ from dotenv import load_dotenv, find_dotenv
 
 LOGGER = logging.getLogger(__name__)
 
-# Find and load .env file with debug info
+# Find and load .env file with debug info.
+# Prefer project-specific backend/.env if the current working directory is outside backend.
 env_file = find_dotenv(usecwd=True)
+if not env_file:
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    candidate = os.path.join(backend_dir, '.env')
+    if os.path.exists(candidate):
+        env_file = candidate
+
 if env_file:
     LOGGER.debug(f"Loading .env from: {env_file}")
     loaded = load_dotenv(env_file, override=True)
@@ -30,7 +37,7 @@ class Settings(BaseModel):
     tz: str = Field(default_factory=lambda: _clean(os.getenv("TZ"), "Asia/Karachi"))
     gmail_query_base: str = Field(
         default_factory=lambda: _clean(os.getenv("GMAIL_QUERY_BASE"),
-                                       'subject:("Class Schedule" OR schedule) in:inbox')
+                                       'subject:"Class Schedule" in:inbox -subject:midterm -subject:exam -subject:examination -subject:lab -subject:holiday -subject:retake -subject:"date sheet" -subject:notice -subject:"new material"')
     )
     check_hour_local: int = Field(default_factory=lambda: int(_clean(os.getenv("CHECK_HOUR_LOCAL"), "20")))
     check_minute_local: int = Field(default_factory=lambda: int(_clean(os.getenv("CHECK_MINUTE_LOCAL"), "0")))

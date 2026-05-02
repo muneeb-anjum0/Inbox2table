@@ -38,15 +38,11 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({ status, message }) =>
   };
 
   return (
-    <div className={`flex items-center p-4 rounded-xl border-2 transition-all duration-300 animate-drop-bounce delay-100 hover:shadow-lg hover:scale-105 enhanced-hover subtle-glow ${getStatusColors()}`}>
-      <div className="relative">
+    <div className={`flex items-center p-4 rounded-xl border transition-all duration-300 shadow-sm ${getStatusColors()}`}>
+      <div>
         {getStatusIcon()}
-        <div className="absolute -top-1 -right-1 w-2 h-2 bg-current rounded-full opacity-60 animate-ping"></div>
       </div>
       <span className="ml-3 text-sm font-medium">{message}</span>
-      <div className="ml-auto">
-        <div className="w-2 h-2 rounded-full bg-current opacity-40"></div>
-      </div>
     </div>
   );
 };

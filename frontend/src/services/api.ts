@@ -108,7 +108,9 @@ export const apiService = {
     if (rateLimiter.shouldBlock('/api/scrape')) {
       throw new Error('Please wait before running the scraper again');
     }
-    const response: AxiosResponse<ApiResponse<TimetableData>> = await api.post('/api/scrape');
+    const user = localStorage.getItem('user');
+    const payload = user ? { user_email: JSON.parse(user).email } : {};
+    const response: AxiosResponse<ApiResponse<TimetableData>> = await api.post('/api/scrape', payload);
     return response.data;
   },
 

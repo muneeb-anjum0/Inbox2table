@@ -33,6 +33,11 @@ function AppContent() {
   // Computed state
   const noSemestersConfigured = config && (!config.semester_filter || config.semester_filter.length === 0);
 
+  const normalizeSemesterKey = (value?: string | null) => {
+    if (!value) return '';
+    return value.toUpperCase().replace(/[^A-Z0-9]+/g, '');
+  };
+
   // Helper function to filter timetable items based on configured semesters
   const getFilteredTimetableItems = () => {
     if (!timetableData?.items || !config?.semester_filter || config.semester_filter.length === 0) {
@@ -40,76 +45,31 @@ function AppContent() {
     }
 
     const filteredItems = timetableData.items.filter(item => {
-      if (!item.semester) return false;
-      
-      const itemSemester = item.semester.trim();
+      const itemSemesterKey = normalizeSemesterKey(item.semester_key || item.semester);
+      if (!itemSemesterKey) return false;
       
       return config.semester_filter.some(configSemester => {
-        const configSemesterTrimmed = configSemester.trim();
-        
-        // Direct match
-        if (itemSemester === configSemesterTrimmed) return true;
-        
-        // Enhanced flexible matching for different formats - handles ANY spacing variation
-        const flexibleMatch = (item: string, config: string) => {
-          // 1. Exact match
-          if (item === config) return true;
-          
-          // 2. Basic normalization (consistent spacing)
-          const normalizeBasic = (str: string) => {
-            return str
-              .replace(/\s+/g, ' ')  // Multiple spaces to single space
-              .replace(/\s*\(\s*/g, '(')  // Remove spaces around opening parentheses
-              .replace(/\s*\)\s*/g, ')')  // Remove spaces around closing parentheses
-              .replace(/\s*-\s*/g, ' - ')  // Normalize dashes with consistent spacing
-              .trim()
-              .toLowerCase();
-          };
-          
-          const itemNormalized = normalizeBasic(item);
-          const configNormalized = normalizeBasic(config);
-          
-          if (itemNormalized === configNormalized) return true;
-          
-          // 3. Compact match (remove all spaces) - handles "BS(CS)-2C" vs "BS (CS) - 2 C"
-          const itemCompact = item.replace(/\s+/g, '').toLowerCase();
-          const configCompact = config.replace(/\s+/g, '').toLowerCase();
-          
-          if (itemCompact === configCompact) return true;
-          
-          // 4. Pattern-based matching for section variations
-          const itemPattern = item.match(/^(.*?)\s*-\s*(\d+)\s*([A-Z]*)$/i);
-          const configPattern = config.match(/^(.*?)\s*-\s*(\d+)\s*([A-Z]*)$/i);
-          
-          if (itemPattern && configPattern) {
-            const itemProgram = itemPattern[1].replace(/\s+/g, '').toLowerCase();
-            const itemNumber = itemPattern[2];
-            const itemSection = itemPattern[3].toLowerCase();
-            
-            const configProgram = configPattern[1].replace(/\s+/g, '').toLowerCase();
-            const configNumber = configPattern[2];
-            const configSection = configPattern[3].toLowerCase();
-            
-            return (itemProgram === configProgram && 
-                    itemNumber === configNumber && 
-                    itemSection === configSection);
-          }
-          
-          return false;
-        };
-        
-        console.debug(`🔍 Comparing: "${itemSemester}" vs "${configSemesterTrimmed}"`);
-        
-        return flexibleMatch(itemSemester, configSemesterTrimmed);
+        const configSemesterKey = normalizeSemesterKey(configSemester);
+        if (!configSemesterKey) return false;
+
+        console.debug(`🔍 Comparing: "${itemSemesterKey}" vs "${configSemesterKey}"`);
+
+        return (
+          itemSemesterKey === configSemesterKey ||
+          itemSemesterKey.endsWith(configSemesterKey) ||
+          configSemesterKey.endsWith(itemSemesterKey)
+        );
       });
     });
 
     // Deduplicate items based on course code, semester, time, and room
     // This prevents duplicate entries for the same class
     const deduplicatedItems = filteredItems.filter((item, index, array) => {
-      const currentKey = `${item.semester}-${item.course || item.course_code}-${item.time}-${item.room}`;
+      const semesterKey = normalizeSemesterKey(item.semester_key || item.semester);
+      const currentKey = `${semesterKey}-${item.course || item.course_code}-${item.time}-${item.room}`;
       return array.findIndex(otherItem => {
-        const otherKey = `${otherItem.semester}-${otherItem.course || otherItem.course_code}-${otherItem.time}-${otherItem.room}`;
+        const otherSemesterKey = normalizeSemesterKey(otherItem.semester_key || otherItem.semester);
+        const otherKey = `${otherSemesterKey}-${otherItem.course || otherItem.course_code}-${otherItem.time}-${otherItem.room}`;
         return otherKey === currentKey;
       }) === index;
     });
@@ -347,287 +307,155 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-indigo-50/20 animate-drop-bounce relative">
-      {/* Subtle background pattern */}
-      <div className="absolute inset-0 opacity-30 bg-gradient-to-r from-transparent via-white/50 to-transparent animate-pulse" style={{animationDuration: '4s'}}></div>
+    <div className="app-shell min-h-screen">
+      <div className="app-shell__overlay"></div>
       <div className="relative z-10">
-      {/* Header */}
-      <header className="bg-white/95 backdrop-blur-sm shadow-lg sticky top-0 z-30 animate-drop-bounce-fast border-b border-blue-100/50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between py-3 sm:py-4">
-            <div className="flex items-center gap-4 mb-2 sm:mb-0 animate-drop-bounce-fast delay-50">
-              <div className="relative">
-                <img src="/logoo.svg" alt="Logo" className="h-9 w-9 sm:h-11 sm:w-11 p-1 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-xl transition-all duration-300 hover:scale-110 hover:rotate-3 animate-drop-bounce-fast delay-75 shadow-sm" style={{overflow: 'visible'}} />
-                <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+        <header className="topbar sticky top-0 z-40">
+          <div className="layout-shell px-4 sm:px-6 lg:px-8 py-4">
+            <div className="topbar__row">
+              <div className="topbar__brand">
+                <div className="brand-mark-wrap">
+                  <img src="/logoo.svg" alt="Logo" className="brand-mark" />
+                  <span className="brand-dot" aria-hidden="true"></span>
+                </div>
+                <div>
+                  <h1 className="brand-title">Timetable Wizard</h1>
+                  <p className="brand-subtitle">Daily Schedule Dashboard</p>
+                </div>
               </div>
-              <div className="flex items-center bg-gradient-to-r from-blue-50 to-indigo-50 rounded-full px-4 py-2 shadow-sm border border-blue-100 transition-all duration-200 hover:shadow-md hover:scale-105 animate-drop-bounce-fast delay-100">
-                <span className="text-xs sm:text-sm text-blue-700 font-semibold">Welcome</span>
-                <span className="mx-2 text-xs sm:text-sm font-sans text-blue-900 bg-white/70 px-2 py-1 rounded-full">{user?.email}</span>
+
+              <div className="topbar__meta">
+                <span className="user-pill">{user?.email}</span>
+                <span className="updated-pill">
+                  <img src="/refresh.svg" alt="Last Updated" className="h-4 w-4" />
+                  Last updated: {formatLastUpdate(lastUpdate)}
+                </span>
               </div>
             </div>
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-              <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 bg-gradient-to-r from-gray-50 to-gray-100 rounded-full px-4 py-2 shadow-sm border border-gray-200 transition-all duration-200 hover:shadow-md hover:scale-105 animate-drop-bounce-fast delay-150">
-                <img src="/refresh.svg" alt="Last Updated" className="h-4 w-4 mr-1 text-blue-500" />
-                <span>Last updated:</span>
-                <span className="font-mono text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full text-xs">{formatLastUpdate(lastUpdate)}</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={runScraper}
-                  disabled={isScraperRunning || operationInProgress}
-                  className="inline-flex items-center px-3 sm:px-4 py-2 border-2 border-blue-200 text-xs sm:text-sm font-medium rounded-full shadow-sm text-blue-700 bg-gradient-to-r from-white to-blue-50 hover:from-blue-50 hover:to-blue-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 hover:shadow-md hover:scale-105 animate-drop-bounce-fast delay-200 enhanced-hover"
-                >
-                  <img src="/refresh.svg" alt="Refresh" className={`h-4 w-4 mr-2 transition-transform duration-300 ${isScraperRunning ? 'animate-spin' : 'hover:rotate-180'}`} />
-                  <span className="hidden sm:inline">
-                    {isScraperRunning ? 'Scraping...' : isSemesterUpdateRunning ? 'Updating...' : 'Run Scraper'}
-                  </span>
-                  <span className="sm:hidden">
-                    {isScraperRunning ? '⏳' : isSemesterUpdateRunning ? '🔄' : '▶️'}
-                  </span>
+
+            <div className="topbar__actions">
+              <button
+                onClick={runScraper}
+                disabled={isScraperRunning || operationInProgress}
+                className="btn-pill btn-pill--primary"
+              >
+                <img src="/refresh.svg" alt="Refresh" className={`h-4 w-4 mr-2 ${isScraperRunning ? 'animate-spin' : ''}`} />
+                {isScraperRunning ? 'Scraping...' : isSemesterUpdateRunning ? 'Updating...' : 'Run Scraper'}
+              </button>
+
+              <button
+                onClick={() => setShowSemesterManager(true)}
+                className={`btn-pill btn-pill--neutral ${
+                  timetableData && config && (!config.semester_filter || config.semester_filter.length === 0)
+                    ? 'btn-pill--attention'
+                    : ''
+                }`}
+              >
+                <img src="/setting.svg" alt="Settings" className="h-4 w-4 mr-2" />
+                Semesters
+                <span className="count-pill">{config?.semester_filter?.length || 0}</span>
+              </button>
+
+              <div className="relative inline-block">
+                <button onClick={handleLogoutClick} className="btn-pill btn-pill--ghost">
+                  <img src="/logout.svg" alt="Logout" className="h-4 w-4 mr-2" />
+                  Sign Out
                 </button>
-                <button
-                  onClick={() => setShowSemesterManager(true)}
-                  className={`inline-flex items-center px-3 py-2 border-2 text-xs sm:text-sm font-medium rounded-full text-gray-700 bg-gradient-to-r from-white to-gray-50 hover:from-gray-50 hover:to-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-400 transition-all duration-200 hover:shadow-md hover:scale-105 animate-drop-bounce-fast delay-250 enhanced-hover ${
-                    timetableData && config && (!config.semester_filter || config.semester_filter.length === 0) 
-                      ? 'border-orange-300 shadow-md bg-gradient-to-r from-orange-50 to-yellow-50' 
-                      : 'border-gray-300'
-                  }`}
-                >
-                  <img src="/setting.svg" alt="Settings" className="h-4 w-4 mr-2 transition-transform duration-300 hover:rotate-90" />
-                  <span className="hidden sm:inline">Semesters </span>
-                  <span className="bg-blue-100 text-blue-700 rounded-full px-2 py-0.5 text-xs font-bold ml-1">
-                    {config?.semester_filter?.length || 0}
-                  </span>
-                </button>
-                <div className="relative inline-block animate-drop-bounce-fast delay-300">
-                  <button
-                    onClick={handleLogoutClick}
-                    className="flex items-center space-x-1 text-gray-600 hover:text-red-600 px-3 py-2 rounded-full hover:bg-gradient-to-r hover:from-red-50 hover:to-pink-50 transition-all duration-200 text-xs sm:text-sm border border-gray-200 hover:border-red-200 hover:shadow-md hover:scale-105 enhanced-hover"
-                  >
-                    <img src="/logout.svg" alt="Logout" className="h-4 w-4 transition-transform duration-300 hover:rotate-12" />
-                    <span>Sign Out</span>
-                  </button>
-                  {showLogoutConfirm && (
-                    <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50 p-4 text-center animate-modal-drop">
-                      <div className="text-gray-700 mb-3 text-sm">Are you sure you want to sign out?</div>
-                      <div className="flex justify-center gap-2">
-                        <button
-                          onClick={handleLogoutCancel}
-                          className="inline-flex items-center px-3 py-2 border-2 border-gray-400 text-xs sm:text-sm font-medium rounded-full shadow text-gray-700 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-400 transition-colors duration-200 hover:scale-105"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={handleLogoutConfirm}
-                          className="inline-flex items-center px-3 py-2 border-2 border-red-400 text-xs sm:text-sm font-medium rounded-full shadow text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-400 transition-colors duration-200 hover:scale-105"
-                        >
-                          Sign Out
-                        </button>
-                      </div>
+
+                {showLogoutConfirm && (
+                  <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-xl shadow-lg z-50 p-4 text-center animate-modal-drop">
+                    <div className="text-gray-700 mb-3 text-sm">Are you sure you want to sign out?</div>
+                    <div className="flex justify-center gap-2">
+                      <button
+                        onClick={handleLogoutCancel}
+                        className="inline-flex items-center px-3 py-2 border border-gray-300 text-xs sm:text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition-colors duration-200"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleLogoutConfirm}
+                        className="inline-flex items-center px-3 py-2 border border-red-300 text-xs sm:text-sm font-medium rounded-lg text-red-700 bg-red-50 hover:bg-red-100 transition-colors duration-200"
+                      >
+                        Sign Out
+                      </button>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto py-4 sm:py-6 px-4 sm:px-6 lg:px-8">
-        <div className="space-y-4 sm:space-y-6">
-          
-          {/* Status Indicator - Always show when config is available */}
+        <main className="layout-shell px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-5 sm:space-y-6">
           {config && (
-            <div>
-              <StatusIndicator 
-                status={status === 'loading' ? 'loading' : status === 'success' ? 'success' : status === 'warning' ? 'warning' : status === 'error' ? 'error' : 'success'} 
-                message={message || (config.semester_filter && config.semester_filter.length > 0 ? `${config.semester_filter.length} semester(s) configured` : 'Ready to configure semesters')} 
-              />
-            </div>
+            <StatusIndicator
+              status={status === 'loading' ? 'loading' : status === 'success' ? 'success' : status === 'warning' ? 'warning' : status === 'error' ? 'error' : 'success'}
+              message={message || (config.semester_filter && config.semester_filter.length > 0 ? `${config.semester_filter.length} semester(s) configured` : 'Ready to configure semesters')}
+            />
           )}
 
-          {/* Summary Stats - Always show when config is available */}
-          {config && (
-            <div>
-              {timetableData && !isScraperRunning ? (
-                <SummaryStats 
-                  data={timetableData} 
-                  config={config || undefined} 
-                  filteredItems={getFilteredTimetableItems()}
-                />
-              ) : (
-                // Show placeholder stats when no semesters configured
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                  <div className="bg-gradient-to-br from-white to-slate-50/50 overflow-hidden shadow-md rounded-2xl border border-slate-200/50 transition-all duration-300 hover:shadow-lg hover:scale-105 animate-drop-bounce delay-150 enhanced-hover">
-                    <div className="p-6 relative opacity-60">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 bg-slate-100 p-3 rounded-2xl border border-slate-200">
-                          <img src="/courses.svg" alt="Total Classes" className="w-7 h-7 opacity-50" />
-                        </div>
-                        <div className="ml-6 w-0 flex-1">
-                          <dl>
-                            <dt className="text-sm font-medium text-slate-500 truncate">
-                              Total Classes
-                            </dt>
-                            <dd className="text-3xl font-bold text-slate-400 mt-1">
-                              0
-                            </dd>
-                          </dl>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-gradient-to-br from-white to-blue-50/50 overflow-hidden shadow-md rounded-xl border border-blue-200/50 transition-all duration-300 hover:shadow-lg hover:scale-105 animate-drop-bounce delay-200 enhanced-hover">
-                    <div className="p-4 relative opacity-60">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 bg-blue-100 p-2 rounded-xl border border-blue-200">
-                          <img src="/uniqueCourses.svg" alt="Unique Courses" className="w-5 h-5 opacity-50" />
-                        </div>
-                        <div className="ml-4 w-0 flex-1">
-                          <dl>
-                            <dt className="text-sm font-medium text-blue-500 truncate">
-                              Unique Courses
-                            </dt>
-                            <dd className="text-2xl font-bold text-blue-400 mt-1">
-                              0
-                            </dd>
-                          </dl>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-gradient-to-br from-white to-gray-50/50 overflow-hidden shadow-md rounded-xl border border-gray-200/50 transition-all duration-300 hover:shadow-lg hover:scale-105 animate-drop-bounce delay-250 enhanced-hover">
-                    <div className="p-4 relative opacity-60">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 bg-gray-100 p-2 rounded-xl border border-gray-200">
-                          <img src="/faculty.svg" alt="Faculty Members" className="w-5 h-5 opacity-50" />
-                        </div>
-                        <div className="ml-4 w-0 flex-1">
-                          <dl>
-                            <dt className="text-sm font-medium text-gray-500 truncate">
-                              Faculty Members
-                            </dt>
-                            <dd className="text-2xl font-bold text-gray-400 mt-1">
-                              0
-                            </dd>
-                          </dl>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-gradient-to-br from-white to-slate-50/50 overflow-hidden shadow-md rounded-xl border border-slate-200/50 transition-all duration-300 hover:shadow-lg hover:scale-105 animate-drop-bounce delay-300 enhanced-hover">
-                    <div className="p-4 relative opacity-60">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 bg-slate-100 p-2 rounded-xl border border-slate-200">
-                          <img src="/day.svg" alt="Day" className="w-5 h-5 opacity-50" />
-                        </div>
-                        <div className="ml-4 w-0 flex-1">
-                          <dl>
-                            <dt className="text-sm font-medium text-slate-500 truncate">
-                              Current Day
-                            </dt>
-                            <dd className="text-xl font-bold text-slate-400 mt-1">
-                              {new Date().toLocaleDateString(undefined, { weekday: 'long' })}
-                            </dd>
-                          </dl>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-gradient-to-br from-white to-indigo-50/30 overflow-hidden shadow-lg rounded-xl border border-indigo-100 col-span-1 md:col-span-2 lg:col-span-4 transition-all duration-300 hover:shadow-xl hover:scale-105 animate-drop-bounce delay-350 enhanced-hover opacity-60">
-                    <div className="p-4 relative">
-                      <div className="absolute top-2 right-2 flex gap-1">
-                        <div className="w-1 h-1 bg-gray-300 rounded-full animate-pulse"></div>
-                        <div className="w-1 h-1 bg-gray-300 rounded-full animate-pulse" style={{animationDelay: '0.2s'}}></div>
-                        <div className="w-1 h-1 bg-gray-300 rounded-full animate-pulse" style={{animationDelay: '0.4s'}}></div>
-                      </div>
-                      <div className="flex items-center mb-3">
-                        <div className="bg-gray-100 p-1.5 rounded-lg mr-2">
-                          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                          </svg>
-                        </div>
-                        <span className="font-bold text-gray-500 text-base">Semester Breakdown</span>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <span className="text-gray-400 text-sm bg-gray-100 px-3 py-1.5 rounded-full border border-gray-200">No semester data available</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+          {config && timetableData && !isScraperRunning && (
+            <SummaryStats
+              data={timetableData}
+              config={config || undefined}
+              filteredItems={getFilteredTimetableItems()}
+            />
           )}
 
-          {/* Timetable - Only show if config is loaded, semesters are configured, scraper is NOT running, and timetable data is present */}
+          {(config && !timetableData) && (
+            <section className="surface-card p-7 sm:p-8 text-center">
+              <img src="/pulse.svg" alt="Start" className="mx-auto h-11 w-11 mb-3 opacity-70" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Ready When You Are</h3>
+              <p className="text-gray-600 max-w-xl mx-auto mb-5">
+                Configure your semesters and run the scraper to populate the timetable.
+              </p>
+              <button onClick={runScraper} disabled={isScraperRunning || operationInProgress} className="btn-pill btn-pill--primary">
+                <img src="/refresh.svg" alt="Refresh" className={`h-4 w-4 mr-2 ${isScraperRunning ? 'animate-spin' : ''}`} />
+                {isScraperRunning ? 'Scraping...' : 'Fetch Schedule'}
+              </button>
+            </section>
+          )}
+
           {config && !noSemestersConfigured && !isScraperRunning && timetableData && timetableData.items && timetableData.items.length > 0 && (
-            <div className="bg-white shadow-lg overflow-hidden rounded-xl border border-gray-100 animate-drop-bounce delay-400 hover:shadow-xl transition-shadow duration-300">
-              <div className="px-4 py-4 lg:px-6 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-xl">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-                  <div className="mb-2 sm:mb-0 animate-drop-bounce delay-450">
-                    <h3 className="text-lg font-semibold text-gray-900 tracking-tight flex items-center gap-2">
-                      <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
-                      Class Schedule
-                    </h3>
-                  </div>
-                  <div className="flex items-center gap-2 animate-drop-bounce delay-500">
-                    <div className="flex items-center gap-1 bg-blue-100 rounded-full px-3 py-1 border border-blue-200">
-                      <img src="/pulse.svg" alt="Pulse" className="h-4 w-4 text-blue-500" />
-                      <span className="text-sm text-blue-700 font-medium">
-                        {getFilteredTimetableItems().length} classes
-                      </span>
-                    </div>
-                  </div>
+            <section className="surface-card overflow-hidden">
+              <div className="surface-card__header">
+                <h3 className="text-lg font-semibold text-gray-900 tracking-tight">Class Schedule</h3>
+                <div className="flex items-center gap-2 bg-blue-50 rounded-full px-3 py-1 border border-blue-100">
+                  <img src="/pulse.svg" alt="Pulse" className="h-4 w-4" />
+                  <span className="text-sm text-blue-700 font-medium">{getFilteredTimetableItems().length} classes</span>
                 </div>
               </div>
               <div className="p-0 timetable-container">
                 <TimetableTable items={getFilteredTimetableItems()} />
               </div>
-            </div>
+            </section>
           )}
 
-          {/* Show Configure Semesters card when no semesters are configured and either timetableData exists or scraper is running */}
           {(noSemestersConfigured && (timetableData || isScraperRunning)) && (
-            <div className="bg-white rounded-lg shadow p-8 text-center animate-drop-bounce delay-400">
-              <div className="text-gray-500 mb-4 animate-drop-bounce delay-450">
-                <img src="/setting.svg" alt="Setting" className="mx-auto mb-4 h-16 w-16 text-blue-400 animate-drop-bounce delay-500" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2 animate-drop-bounce delay-550">Configure Semesters to View Schedule</h3>
-                <p className="text-gray-500 mb-6 animate-drop-bounce delay-600">You have schedule data available, but you need to add semesters to organize and filter your classes properly.</p>
-                <button
-                  onClick={() => setShowSemesterManager(true)}
-                  className="inline-flex items-center px-3 sm:px-4 py-2 border-2 border-gray-400 text-xs sm:text-sm font-medium rounded-full shadow text-gray-700 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-400 transition-all duration-200 hover:shadow-md hover:scale-105 animate-drop-bounce delay-650"
-                >
-                  <img src="/add.svg" alt="Add" className="h-4 w-4 mr-2" />
-                  <span className="hidden sm:inline">Add Semesters</span>
-                  <span className="sm:hidden">Add</span>
-                </button>
-              </div>
-            </div>
+            <section className="surface-card p-8 text-center">
+              <img src="/setting.svg" alt="Setting" className="mx-auto mb-4 h-12 w-12 opacity-70" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Configure Semesters to View Schedule</h3>
+              <p className="text-gray-600 mb-6 max-w-xl mx-auto">
+                You have schedule data available, but need semester filters to organize and display your classes cleanly.
+              </p>
+              <button onClick={() => setShowSemesterManager(true)} className="btn-pill btn-pill--neutral">
+                <img src="/add.svg" alt="Add" className="h-4 w-4 mr-2" />
+                Add Semesters
+              </button>
+            </section>
           )}
+        </main>
 
-          {/* Semester Breakdown removed to avoid duplication */}
-        </div>
-      </main>
+        <footer className="bg-transparent border-0">
+          <div className="w-full py-2 text-center text-xs text-gray-400">&copy; {new Date().getFullYear()} Timetable Wizard v1.0</div>
+        </footer>
 
-      {/* Minimal Footer */}
-      <footer className="bg-transparent border-0">
-        <div className="w-full py-1 text-center text-xs text-gray-300">
-          &copy; {new Date().getFullYear()} Timetable Wizard v1.0
-        </div>
-      </footer>
-
-      {/* Semester Manager Modal */}
-      <SemesterManager
-        isOpen={showSemesterManager}
-        onClose={() => setShowSemesterManager(false)}
-        currentSemesters={config?.semester_filter || []}
-        onSave={handleSaveSemesters}
-      />
+        <SemesterManager
+          isOpen={showSemesterManager}
+          onClose={() => setShowSemesterManager(false)}
+          currentSemesters={config?.semester_filter || []}
+          onSave={handleSaveSemesters}
+        />
       </div>
     </div>
   );

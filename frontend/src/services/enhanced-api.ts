@@ -177,8 +177,10 @@ export const apiService = {
   // Enhanced scraper with progress tracking
   runScraper: async (): Promise<ApiResponse<TimetableData>> => {
     return retryRequest(async () => {
+      const user = localStorage.getItem('user');
+      const payload = user ? { user_email: JSON.parse(user).email } : {};
       const response: AxiosResponse<ApiResponse<TimetableData>> = 
-        await api.post('/api/scrape');
+        await api.post('/api/scrape', payload);
       return response.data;
     }, 1); // Don't retry scraper operations
   },

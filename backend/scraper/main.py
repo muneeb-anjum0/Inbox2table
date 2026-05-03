@@ -1,5 +1,12 @@
 """
-main.py
+Enhanced CLI entry for TimeTable Scraper with comprehensive error handling and robustness.
+Usage:
+  python -m src.scraper.main --once                    # Run once with table display
+  python -m src.scraper.main --once --no-table        # Run once without table  
+  python -m src.scraper.main --run-scheduler           # Start nightly scheduler
+  python -m src.scraper.main --show-json data.json     # Display JSON in table format
+  python -m src.scraper.main --health-check            # Check system health
+  python -m src.scraper.main --config-info             # Show configuration
 """
 import argparse
 import sys

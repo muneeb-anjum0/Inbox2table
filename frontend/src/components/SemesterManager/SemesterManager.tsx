@@ -48,23 +48,21 @@ const SemesterManager: React.FC<SemesterManagerProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 border border-gray-200 animate-modal-drop">
-        <div className="px-6 py-4 border-b border-gray-100">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <img src="/setting.svg" alt="Setting" className="h-6 w-6 text-blue-600 mr-2" />
-              <h3 className="text-lg font-semibold text-gray-900 tracking-tight">
-                Manage Allowed Semesters
-              </h3>
-            </div>
-            <button
-              onClick={onClose}
-              className="rounded-full p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all duration-200 hover:scale-105"
-              title="Close"
-            >
-              <X className="h-5 w-5" />
-            </button>
+      <div className="surface-card shadow-2xl w-full max-w-md mx-4 animate-modal-drop">
+        <div className="surface-card__header">
+          <div className="flex items-center">
+            <Settings className="h-5 w-5 text-blue-600 mr-3" />
+            <h3 className="text-lg font-semibold text-gray-900 tracking-tight">
+              Manage Allowed Semesters
+            </h3>
           </div>
+          <button
+            onClick={onClose}
+            className="rounded-full p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all duration-200 hover:scale-105"
+            title="Close"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
         <div className="px-6 py-4 animate-drop-subtle">
@@ -84,10 +82,10 @@ const SemesterManager: React.FC<SemesterManagerProps> = ({
               <button
                 onClick={addSemester}
                 disabled={!newSemester.trim()}
-                className="inline-flex items-center px-3 py-2 border-2 border-blue-400 rounded-full bg-white text-blue-600 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed ml-2 transition-all duration-200 hover:scale-105"
+                className="btn-pill btn-pill--neutral ml-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Add semester"
               >
-                <img src="/add.svg" alt="Add" className="h-4 w-4" />
+                <Plus className="h-4 w-4" />
               </button>
             </div>
             <p className="mt-1 text-xs text-gray-500">
@@ -111,7 +109,7 @@ const SemesterManager: React.FC<SemesterManagerProps> = ({
                       <span className="text-sm text-gray-900">{semester}</span>
                       <button
                         onClick={() => removeSemester(index)}
-                        className="inline-flex items-center px-2 py-1 border-2 border-red-400 rounded-full bg-white text-red-600 hover:bg-red-50 hover:text-red-800 transition-all duration-200 hover:scale-105"
+                        className="btn-pill btn-pill--ghost"
                         title="Remove semester"
                       >
                         <X className="h-4 w-4" />
@@ -127,15 +125,15 @@ const SemesterManager: React.FC<SemesterManagerProps> = ({
         <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
           <button
             onClick={onClose}
-            className="inline-flex items-center px-4 py-2 border-2 border-gray-400 text-xs sm:text-sm font-medium rounded-full shadow text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 transition-all duration-200"
+            className="btn-pill btn-pill--neutral"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
-            className="inline-flex items-center px-4 py-2 border-2 border-blue-400 text-xs sm:text-sm font-medium rounded-full shadow text-blue-700 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-400 transition-all duration-200"
+            className="btn-pill btn-pill--primary"
           >
-            <img src="/add.svg" alt="Save" className="h-4 w-4 mr-2" />
+            <Save className="h-4 w-4 mr-2" />
             Save Changes
           </button>
         </div>

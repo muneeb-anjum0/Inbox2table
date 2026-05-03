@@ -135,6 +135,8 @@ function AppContent() {
     }
     
     try {
+      setStatus('warning');
+      setMessage(lastUpdate ? 'Loading cached data...' : 'Loading previous data...');
       setIsLoading(true);
       setOperationInProgress(true);
       const response = await apiService.getLatestTimetable();
@@ -178,7 +180,7 @@ function AppContent() {
     // Check if semesters are configured before running scraper
     if (!config?.semester_filter || config.semester_filter.length === 0) {
       setStatus('error');
-      setMessage('No semesters configured. Please add semesters before running the scraper.');
+      setMessage('No semesters configured. Please add semesters before running the parser.');
       return;
     }
     
@@ -187,23 +189,23 @@ function AppContent() {
       setIsLoading(true);
       setOperationInProgress(true);
       setStatus('loading');
-      setMessage('Running scraper...');
+      setMessage('Running parser...');
       
       const response = await apiService.runScraper();
       if (response.success && response.data) {
         setTimetableData(response.data);
         setStatus('success');
-        setMessage(response.message || 'Scrape completed successfully');
+        setMessage(response.message || 'Parser completed successfully');
         await checkStatus(); // Update last update time
       } else {
         setStatus('error');
-        setMessage(response.error || 'Scrape failed');
+        setMessage(response.error || 'Parser failed');
         setTimetableData(null);
       }
     } catch (error) {
       console.error('Error running scraper:', error);
       setStatus('error');
-      setMessage('Failed to run scraper');
+      setMessage('Failed to run parser');
       setTimetableData(null);
     } finally {
       setIsScraperRunning(false);
@@ -225,23 +227,23 @@ function AppContent() {
       setIsLoading(true);
       setOperationInProgress(true);
       setStatus('loading');
-      setMessage('Running scraper...');
+      setMessage('Running parser...');
       
       const response = await apiService.runScraper();
       if (response.success && response.data) {
         setTimetableData(response.data);
         setStatus('success');
-        setMessage(response.message || 'Scrape completed successfully');
+        setMessage(response.message || 'Parser completed successfully');
         await checkStatus(); // Update last update time
       } else {
         setStatus('error');
-        setMessage(response.error || 'Scrape failed');
+        setMessage(response.error || 'Parser failed');
         setTimetableData(null);
       }
     } catch (error) {
       console.error('Error running scraper:', error);
       setStatus('error');
-      setMessage('Failed to run scraper');
+      setMessage('Failed to run parser');
       setTimetableData(null);
     } finally {
       setIsScraperRunning(false);
@@ -272,12 +274,12 @@ function AppContent() {
         setTimetableData(null);
         
         setStatus('success');
-        setMessage(`Successfully updated ${newSemesters.length} allowed semesters. Run scraper to apply new filters.`);
+        setMessage(`Successfully updated ${newSemesters.length} allowed semesters. Run parser to apply new filters.`);
         
-        // Automatically run scraper if there are allowed semesters
+        // Automatically run parser if there are allowed semesters
         if (newSemesters.length > 0) {
-          setMessage(`Successfully updated ${newSemesters.length} allowed semesters. Running scraper...`);
-          // Small delay to let config state update, then run scraper
+          setMessage(`Successfully updated ${newSemesters.length} allowed semesters. Running parser...`);
+          // Small delay to let config state update, then run parser
           setTimeout(() => {
             runScraperWithSemesters(newSemesters);
           }, 1000);
@@ -311,29 +313,28 @@ function AppContent() {
       <div className="app-shell__overlay"></div>
       <div className="relative z-10">
         <header className="topbar sticky top-0 z-40">
-          <div className="layout-shell px-4 sm:px-6 lg:px-8 py-4">
-            <div className="topbar__row">
-              <div className="topbar__brand">
-                <div className="brand-mark-wrap">
-                  <img src="/logoo.svg" alt="Logo" className="brand-mark" />
-                  <span className="brand-dot" aria-hidden="true"></span>
-                </div>
-                <div>
-                  <h1 className="brand-title">Timetable Wizard</h1>
-                  <p className="brand-subtitle">Daily Schedule Dashboard</p>
-                </div>
-              </div>
+          <div className="layout-shell px-4 sm:px-6 lg:px-8 py-2"></div>
+        </header>
 
-              <div className="topbar__meta">
-                <span className="user-pill">{user?.email}</span>
-                <span className="updated-pill">
-                  <img src="/refresh.svg" alt="Last Updated" className="h-4 w-4" />
-                  Last updated: {formatLastUpdate(lastUpdate)}
-                </span>
+        <main className="layout-shell px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-5 sm:space-y-6">
+          <section className="surface-card p-4 action-panel">
+            <div className="action-panel__header">
+              <div>
+                <p className="text-sm uppercase tracking-[0.24em] text-slate-500 font-semibold">Quick Actions</p>
+                <h2 className="text-xl font-semibold text-slate-900">Manage your schedule</h2>
+              </div>
+              <div className="action-panel__meta">
+                <div className="action-panel__meta-item">
+                  <span className="meta-label">Logged in</span>
+                  <span className="meta-value">{user?.email}</span>
+                </div>
+                <div className="action-panel__meta-item">
+                  <span className="meta-label">Last updated</span>
+                  <span className="meta-value">{formatLastUpdate(lastUpdate)}</span>
+                </div>
               </div>
             </div>
-
-            <div className="topbar__actions">
+            <div className="action-rail">
               <button
                 onClick={runScraper}
                 disabled={isScraperRunning || operationInProgress}
@@ -356,41 +357,36 @@ function AppContent() {
                 <span className="count-pill">{config?.semester_filter?.length || 0}</span>
               </button>
 
-              <div className="relative inline-block">
-                <button onClick={handleLogoutClick} className="btn-pill btn-pill--ghost">
-                  <img src="/logout.svg" alt="Logout" className="h-4 w-4 mr-2" />
-                  Sign Out
-                </button>
-
-                {showLogoutConfirm && (
-                  <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-xl shadow-lg z-50 p-4 text-center animate-modal-drop">
-                    <div className="text-gray-700 mb-3 text-sm">Are you sure you want to sign out?</div>
-                    <div className="flex justify-center gap-2">
-                      <button
-                        onClick={handleLogoutCancel}
-                        className="inline-flex items-center px-3 py-2 border border-gray-300 text-xs sm:text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition-colors duration-200"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleLogoutConfirm}
-                        className="inline-flex items-center px-3 py-2 border border-red-300 text-xs sm:text-sm font-medium rounded-lg text-red-700 bg-red-50 hover:bg-red-100 transition-colors duration-200"
-                      >
-                        Sign Out
-                      </button>
-                    </div>
-                  </div>
+              <div className="inline-flex items-center gap-2">
+                {!showLogoutConfirm ? (
+                  <button onClick={handleLogoutClick} className="btn-pill btn-pill--ghost">
+                    <img src="/logout.svg" alt="Logout" className="h-4 w-4 mr-2" />
+                    Sign Out
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={handleLogoutConfirm}
+                      className="btn-pill border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
+                    >
+                      Confirm Sign Out?
+                    </button>
+                    <button
+                      onClick={handleLogoutCancel}
+                      className="btn-pill border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                    >
+                      Cancel Sign Out?
+                    </button>
+                  </>
                 )}
               </div>
             </div>
-          </div>
-        </header>
+          </section>
 
-        <main className="layout-shell px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-5 sm:space-y-6">
-          {config && (
+          {(status !== 'idle' || config) && (
             <StatusIndicator
               status={status === 'loading' ? 'loading' : status === 'success' ? 'success' : status === 'warning' ? 'warning' : status === 'error' ? 'error' : 'success'}
-              message={message || (config.semester_filter && config.semester_filter.length > 0 ? `${config.semester_filter.length} semester(s) configured` : 'Ready to configure semesters')}
+              message={message || (config?.semester_filter && config.semester_filter.length > 0 ? `${config.semester_filter.length} semester(s) configured` : 'Ready to configure semesters')}
             />
           )}
 
@@ -447,7 +443,7 @@ function AppContent() {
         </main>
 
         <footer className="bg-transparent border-0">
-          <div className="w-full py-2 text-center text-xs text-gray-400">&copy; {new Date().getFullYear()} Timetable Wizard v1.0</div>
+          <div className="w-full py-2 text-center text-xs text-gray-300">&copy; {new Date().getFullYear()} Timetable Wizard v2.0</div>
         </footer>
 
         <SemesterManager

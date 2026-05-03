@@ -1,5 +1,5 @@
 """
-gmail_client.py
+Gmail API client + helpers.
 """
 import base64
 import logging
@@ -11,8 +11,6 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-import email
-from email import policy
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
@@ -82,68 +80,4 @@ def get_message_html(service, user_id: str, msg_id: str) -> Optional[str]:
     msg = get_message(service, user_id, msg_id)
     payload = msg.get("payload", {})
     html = _walk_parts_for_html(payload)
-
-    # If the HTML is missing or contains a clipped marker, attempt raw MIME fetch
-    clipped_markers = ['Message clipped', 'View entire message', 'View entire message']
-    try_raw = False
-    if not html:
-        try_raw = True
-    else:
-        lower_html = html[:1000]
-        if any(marker in lower_html for marker in clipped_markers):
-            try_raw = True
-
-    if try_raw:
-        try:
-            raw_msg = service.users().messages().get(userId=user_id, id=msg_id, format='raw').execute()
-            raw_b64 = raw_msg.get('raw')
-            if raw_b64:
-                parsed = _parse_raw_message_html(raw_b64)
-                if parsed:
-                    return parsed
-        except Exception as e:
-            LOGGER.warning(f"Could not fetch/parse raw message: {e}")
-
     return html
-
-
-def _base64_urlsafe_decode(s: str) -> bytes:
-    # Add padding if necessary
-    if isinstance(s, str):
-        s = s.encode('utf-8')
-    # base64.urlsafe_b64decode accepts bytes
-    rem = len(s) % 4
-    if rem:
-        s = s + b'=' * (4 - rem)
-    return base64.urlsafe_b64decode(s)
-
-
-def _parse_raw_message_html(raw_b64: str) -> Optional[str]:
-    """Decode a raw base64url-encoded RFC 822 message and extract the HTML part."""
-    try:
-        raw_bytes = _base64_urlsafe_decode(raw_b64)
-        msg = email.message_from_bytes(raw_bytes, policy=policy.default)
-        if msg.is_multipart():
-            for part in msg.walk():
-                ctype = part.get_content_type()
-                if ctype == 'text/html':
-                    try:
-                        return part.get_content()
-                    except Exception:
-                        return part.get_payload(decode=True).decode(part.get_content_charset('utf-8'), errors='ignore')
-            # fallback: return first text/plain if no html
-            for part in msg.walk():
-                if part.get_content_type() == 'text/plain':
-                    try:
-                        return part.get_content()
-                    except Exception:
-                        return part.get_payload(decode=True).decode(part.get_content_charset('utf-8'), errors='ignore')
-        else:
-            if msg.get_content_type() == 'text/html':
-                try:
-                    return msg.get_content()
-                except Exception:
-                    return msg.get_payload(decode=True).decode(msg.get_content_charset('utf-8'), errors='ignore')
-    except Exception as e:
-        LOGGER.warning(f"Failed to parse raw message: {e}")
-    return None

@@ -25,14 +25,6 @@ LOGGER = logging.getLogger(__name__)
 
 WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
-# Hard-enforce class schedule mail selection so exam/lab/notice threads are excluded.
-STRICT_CLASS_SCHEDULE_QUERY_BASE = (
-    'subject:"Class Schedule" in:inbox '
-    '-subject:midterm -subject:exam -subject:examination '
-    '-subject:lab -subject:holiday -subject:retake '
-    '-subject:"date sheet" -subject:notice -subject:"new material"'
-)
-
 def _target_day_name(now_local: datetime, next_day_available_hour: int = 17) -> str:
     """
     Determine which day's timetable to look for based on current time.
@@ -78,11 +70,6 @@ def _target_date(now_local: datetime, next_day_available_hour: int = 17) -> date
 def _build_query(base: str, day_name: str, newer_than_days: int) -> str:
     return f'{base} "for {day_name}" newer_than:{newer_than_days}d -in:trash'
 
-
-def _class_schedule_query_base(_base: str) -> str:
-    """Always use strict class-schedule-only filtering regardless of user input."""
-    return STRICT_CLASS_SCHEDULE_QUERY_BASE
-
 def _save_json(doc: Dict, folder: str = "data/cache") -> str:
     """Legacy function - still used for backward compatibility"""
     os.makedirs(folder, exist_ok=True)
@@ -117,28 +104,25 @@ def run_once(user_email: str = "me", show_table: bool = False, user_id: Optional
         user_id: Supabase user ID for storing results
         user_settings: User-specific settings (overrides global settings)
     """
-    LOGGER.info("run_once started")
-    LOGGER.info("User context: email=%s user_id=%s", user_email, user_id)
-    LOGGER.info("User settings received: %s", user_settings)
+    LOGGER.info("🔥🔥🔥 RUN_ONCE CALLED! 🔥🔥🔥")
+    LOGGER.info(f"User: {user_email}, ID: {user_id}")
+    LOGGER.info(f"Settings: {user_settings}")
+    LOGGER.info("🔥🔥🔥 RUN_ONCE CALLED! 🔥🔥🔥")
     # Import here to ensure config is loaded first
     from .config import settings
     
     try:
         # Use user settings if provided, otherwise use global settings
-        LOGGER.info("Global settings allowed_semesters: %s", settings.allowed_semesters)
+        LOGGER.info(f"User settings received: {user_settings}")
+        LOGGER.info(f"Global settings allowed_semesters: {settings.allowed_semesters}")
         
         allowed_semesters = user_settings.get('allowed_semesters', settings.allowed_semesters) if user_settings else settings.allowed_semesters
-        raw_gmail_query_base = user_settings.get('gmail_query_base', settings.gmail_query_base) if user_settings else settings.gmail_query_base
-        gmail_query_base = _class_schedule_query_base(raw_gmail_query_base)
+        gmail_query_base = user_settings.get('gmail_query_base', settings.gmail_query_base) if user_settings else settings.gmail_query_base
         newer_than_days = user_settings.get('newer_than_days', settings.newer_than_days) if user_settings else settings.newer_than_days
         timezone = user_settings.get('timezone', settings.tz) if user_settings else settings.tz
         next_day_available_hour = user_settings.get('next_day_available_hour', settings.next_day_available_hour) if user_settings else settings.next_day_available_hour
         
-        LOGGER.info("Final allowed_semesters being used: %s", allowed_semesters)
-        # scrape_status functionality removed; log a debug message instead
-        LOGGER.debug('scrape_status removed: skipping "running" status update')
-        if raw_gmail_query_base != gmail_query_base:
-            LOGGER.info("Overriding stored gmail_query_base with strict Class Schedule filter")
+        LOGGER.info(f"Final allowed_semesters being used: {allowed_semesters}")
         
         local_tz = tz.gettz(timezone)
         now_local = datetime.now(tz=local_tz)
@@ -151,7 +135,7 @@ def run_once(user_email: str = "me", show_table: bool = False, user_id: Optional
         LOGGER.info("Gmail query: %s", query)
 
         # Use user-specific tokens if available
-        LOGGER.info("Attempting to load Gmail credentials for user: %s", user_id if user_id else 'default')
+        LOGGER.info(f"Attempting to load Gmail credentials for user: {user_id if user_id else 'default'}")
         if user_id:
             try:
                 from database.supabase_client import supabase_manager
@@ -195,8 +179,7 @@ def run_once(user_email: str = "me", show_table: bool = False, user_id: Optional
 
         LOGGER.info("Searching for Gmail messages...")
         msgs = list_messages(service, user_id=user_email, query=query, max_results=5)
-        LOGGER.info("Found %s messages matching query", len(msgs) if msgs else 0)
-        LOGGER.debug('scrape_status removed: skipping "found_messages" status update')
+        LOGGER.info(f"Found {len(msgs) if msgs else 0} messages matching query")
         
         if not msgs:
             LOGGER.warning("No messages matched the query.")
@@ -225,70 +208,50 @@ def run_once(user_email: str = "me", show_table: bool = False, user_id: Optional
             return {"success": True, "data": doc, "message": "No messages found for today"}
 
         msg_id = msgs[0]["id"]
-        LOGGER.info("Processing message ID: %s", msg_id)
+        LOGGER.info(f"Processing message ID: {msg_id}")
         
         html = get_message_html(service, user_id=user_email, msg_id=msg_id) or ""
         
-        LOGGER.info("Message ID: %s", msg_id)
-        LOGGER.info("Email body length: %s characters", len(html))
+        LOGGER.info(f"Message ID: {msg_id}")
+        LOGGER.info(f"HTML length: {len(html)} characters")
         if html:
-            # Show a preview for debugging parser input shape
+            # Show a preview of the HTML to see if it contains table data
             preview = html[:1000].replace('\n', '\\n').replace('\r', '\\r')
-            LOGGER.info("Email preview (first 1000 chars): %s", preview)
+            LOGGER.info(f"HTML preview (first 1000 chars): {preview}")
             
-            # Diagnostic only: parser is plain-text based and does not require HTML tables.
+            # Check if HTML contains table-related keywords
             if '<table' in html.lower():
-                LOGGER.info("Input includes <table> markup, but plain-text row parser will still be used")
+                LOGGER.info("✅ HTML contains <table> elements")
             else:
-                LOGGER.info("No <table> markup detected; expected for this email format")
+                LOGGER.warning("❌ HTML does NOT contain <table> elements")
                 
             if 'class' in html.lower() and 'section' in html.lower():
-                LOGGER.info("Input contains 'class' and 'section' keywords")
+                LOGGER.info("✅ HTML contains 'class' and 'section' keywords")
             else:
-                LOGGER.warning("Input missing expected 'class' or 'section' keywords")
+                LOGGER.warning("❌ HTML missing 'class' or 'section' keywords")
         else:
-            LOGGER.warning("Email body is empty")
+            LOGGER.warning("HTML content is empty or None")
 
-        LOGGER.info("Parsing email body with semester filters: %s", allowed_semesters)
-        LOGGER.info("Using plain-text timetable parser")
+        LOGGER.info(f"Parsing HTML with semester filters: {allowed_semesters}")
+        LOGGER.info("Using timetable_parser as the only parser")
         
         # Save HTML to file for debugging purposes
         debug_html_path = "debug_email.html"
         try:
             with open(debug_html_path, 'w', encoding='utf-8') as f:
                 f.write(html)
-            LOGGER.info("Saved debug email body to %s", debug_html_path)
-            LOGGER.debug('scrape_status removed: skipping "saved_debug_html" status update')
+            LOGGER.info(f"💾 DEBUG: Saved HTML to {debug_html_path}")
         except Exception as e:
-            LOGGER.warning("Could not save debug email body: %s", e)
+            LOGGER.warning(f"Could not save debug HTML: {e}")
         
-        # Parse using the plain-text row parser
-        LOGGER.debug('scrape_status removed: skipping "parsing" status update')
-
         items = parse_html_with_advanced_pandas(html, allowed_semesters)
-        if items:
-            LOGGER.info("Parser success: %s schedule items extracted", len(items))
-            LOGGER.debug('scrape_status removed: skipping "parsed" status update')
-        else:
-            LOGGER.warning("Parser returned no schedule items")
-            items = []  # No fallback parsers
-
-        LOGGER.debug('scrape_status removed: skipping duplicate "parsed" status update')
+        LOGGER.info(f"timetable_parser returned {len(items)} schedule items")
         
-        LOGGER.info("Parsing complete")
-        
-        # Log first few parsed items for quick verification
+        # Log first few items to verify parser extraction
         for i, item in enumerate(items[:2]):
-            LOGGER.info(
-                "Sample item %s: semester=%s course=%s faculty=%s room=%s time=%s",
-                i + 1,
-                item.get('semester'),
-                item.get('course'),
-                item.get('faculty'),
-                item.get('room'),
-                item.get('time'),
-            )
-        LOGGER.info("Parsed %s schedule items", len(items))
+            LOGGER.info(f"  Item {i+1}: course='{item.get('course')}', title='{item.get('course_title')}', faculty='{item.get('faculty')}', room='{item.get('room')}'")
+            LOGGER.info(f"  Raw: {item.get('raw_cells', [])[:4]}")  # Show first 4 cells
+        LOGGER.info(f"Parsed {len(items)} schedule items with enhanced validation")
 
         # Create summary statistics
         semester_counts = {}
@@ -315,7 +278,6 @@ def run_once(user_email: str = "me", show_table: bool = False, user_id: Optional
         from database.supabase_client import supabase_manager
         saved = supabase_manager.save_timetable_cache(user_id, doc)
         LOGGER.info("Saved parsed schedule to Supabase for user %s", user_id)
-        LOGGER.debug('scrape_status removed: skipping "saved" status update')
         
         # Log summary
         summary = doc.get("summary", {})
@@ -344,7 +306,6 @@ def run_once(user_email: str = "me", show_table: bool = False, user_id: Optional
         error_details = traceback.format_exc()
         LOGGER.error(f"Error in run_once: {e}")
         LOGGER.error(f"Full traceback: {error_details}")
-        LOGGER.debug('scrape_status removed: skipping "error" status update')
         return {"success": False, "error": str(e), "traceback": error_details}
 
 def start_scheduler(user_id: str, user_settings: dict = None) -> BackgroundScheduler:

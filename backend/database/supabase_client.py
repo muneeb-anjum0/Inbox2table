@@ -175,7 +175,7 @@ class SupabaseManager:
             # Return default settings
             default_settings = {
                 'allowed_semesters': ['BS (SE) - 5C'],
-                'gmail_query_base': 'subject:"Class Schedule" in:inbox -subject:midterm -subject:exam -subject:examination -subject:lab -subject:holiday -subject:retake -subject:"date sheet" -subject:notice -subject:"new material"',
+                'gmail_query_base': 'subject:("Class Schedule" OR schedule) in:inbox',
                 'newer_than_days': 2,
                 'timezone': 'Asia/Karachi'
             }

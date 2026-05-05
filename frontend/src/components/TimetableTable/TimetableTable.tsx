@@ -6,6 +6,7 @@ import {
   generateCourseTitle as generateTitle,
   extractRoomFromRawData
 } from '../../utils/courseCorrections';
+import { normalizeSemesterLabel } from '../../utils/semesterNormalization';
 
 interface TimetableTableProps {
   items: TimetableItem[];
@@ -118,7 +119,7 @@ const getDisplayFaculty = (item: TimetableItem): string => {
 };
 
 const getSemesterLabel = (item: TimetableItem): string => {
-  return item.semester_display || item.semester || item.semester_key || 'Unknown';
+  return normalizeSemesterLabel(item.semester_display || item.semester || item.semester_key);
 };
 
 // Helper function to validate and clean course title

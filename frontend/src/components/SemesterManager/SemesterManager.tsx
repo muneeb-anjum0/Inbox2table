@@ -33,8 +33,8 @@ const SemesterManager: React.FC<SemesterManagerProps> = ({
     setSemesters(semesters.filter((_, i) => i !== index));
   };
 
-  const handleSave = () => {
-    onSave(semesters);
+  const handleSave = async () => {
+    await onSave(semesters);
     onClose();
   };
 

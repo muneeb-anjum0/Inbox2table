@@ -38,6 +38,68 @@ FACULTY_KEYWORDS = {"INSTRUCTOR", "INSTRUCTORS", "FACULTY", "PROFESSOR", "PROF",
 COURSE_KEYWORDS = {"WORKSHOP", "COURSE", "DEVELOPMENT", "MANAGEMENT", "COMMUNICATION", "TECHNIQUES", "ANALYSIS", "PRACTICE", "RESEARCH", "ELECTIVES", "UNDERSTANDING", "QURAN", "HOLY"}
 COURSE_CREDITS_RE = re.compile(r"\s*\(\d+\s*,\s*\d+\)\s*$")
 COURSE_CREDITS_SUFFIX_RE = re.compile(r"\s*\(\d+\s*,\s*\d+\)\s*[A-Z]\s*$")
+FACULTY_SUFFIX_STOPWORDS = {
+    "ACADEMIC",
+    "ACCOUNTING",
+    "ADVANCED",
+    "ANALYTICS",
+    "APPLIED",
+    "ARCHITECTURE",
+    "ART",
+    "BUSINESS",
+    "CIVIL",
+    "COMMERCIAL",
+    "COMMUNICATION",
+    "COMPUTER",
+    "DATA",
+    "DEVELOPMENT",
+    "DEVELOPMENTAL",
+    "DESIGN",
+    "DIFFERENTIAL",
+    "ECONOMICS",
+    "EDUCATION",
+    "ENGINEERING",
+    "FINANCE",
+    "FINANCIAL",
+    "FOUNDATIONS",
+    "GENERAL",
+    "GOVERNANCE",
+    "GRAPH",
+    "HISTORY",
+    "HUMAN",
+    "HUMANITIES",
+    "INFORMATION",
+    "INTERNATIONAL",
+    "INTRODUCTION",
+    "LAW",
+    "LEADERSHIP",
+    "MANAGEMENT",
+    "MARKETING",
+    "MATHEMATICAL",
+    "MATHEMATICS",
+    "NETWORKS",
+    "PHILOSPHY",
+    "PHILOSOPHY",
+    "PRACTICES",
+    "PRACTICE",
+    "PROBABILITY",
+    "PSYCHOLOGICAL",
+    "PSYCHOLOGY",
+    "TESTING",
+    "RESEARCH",
+    "RIGHTS",
+    "SCIENCE",
+    "SCIENCES",
+    "SOCIAL",
+    "SOFTWARE",
+    "STATISTICS",
+    "STUDIES",
+    "SYSTEMS",
+    "TECHNICAL",
+    "TECHNIQUES",
+    "THEORY",
+    "VISUAL",
+}
 
 
 SECTION_SUFFIX_PATTERNS = [
@@ -76,6 +138,50 @@ def _html_to_text(value: str) -> str:
     return cleaned
 
 
+def _parse_html_table_rows(html: str) -> List[Tuple[int, str]]:
+    """Extract rows from the first timetable-like HTML table as tab-separated text.
+
+    Returns a list of (serial_no, tab_separated_row_text).
+    """
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+    except Exception:
+        return []
+
+    tables = soup.find_all("table")
+    for table in tables:
+        text = table.get_text(" ")
+        if "Sr No" in text or "Sr No".upper() in text.upper() or "Sr No".lower() in text.lower():
+            rows: List[Tuple[int, str]] = []
+            serial = 1
+            for tr in table.find_all("tr"):
+                cells = [ _collapse_whitespace(td.get_text(" ")) for td in tr.find_all(["td", "th"]) ]
+                if not cells:
+                    continue
+                # If first cell is serial, use it
+                first = cells[0]
+                if re.fullmatch(r"\d{1,4}", first):
+                    try:
+                        serial = int(first)
+                    except Exception:
+                        serial = serial
+                    row_text = "\t".join(cells[1:])
+                else:
+                    row_text = "\t".join(cells)
+
+                # Skip header rows that don't have meaningful content
+                if re.fullmatch(r"(?i)sr\s*no|department|program|section|course|venue|time|campus", first.strip()):
+                    continue
+
+                rows.append((serial, row_text))
+                serial += 1
+
+            if rows:
+                return rows
+
+    return []
+
+
 def _iter_row_blocks(text: str) -> List[Tuple[int, str]]:
     blocks: List[Tuple[int, str]] = []
     current_serial: Optional[int] = None
@@ -103,14 +209,94 @@ def _iter_row_blocks(text: str) -> List[Tuple[int, str]]:
     return blocks
 
 
+def _iter_row_blocks_fallback(text: str) -> List[Tuple[int, str]]:
+    """Fallback row splitter for emails that don't include leading serial numbers
+
+    This groups lines into rows by looking for time/campus markers or tab-separated
+    lines. It assigns synthetic serial numbers when none are present.
+    """
+    blocks: List[Tuple[int, str]] = []
+    current_lines: List[str] = []
+    serial_counter = 1
+
+    def push_current():
+        nonlocal serial_counter
+        if current_lines:
+            joined = "\n".join(current_lines).strip()
+            # Skip pure noise rows that only contain campus/header fragments
+            noise_tokens = {"UNIVERSITY", "ISB", "CAMPUS", "SZABIST", "H-8/4", "H-8"}
+            tokens = [t.strip().upper().strip(' ,.;:') for t in re.split(r"\s+", joined) if t.strip()]
+            if tokens and set(tokens).issubset(noise_tokens):
+                # drop this block as it's likely a footer/header fragment
+                current_lines.clear()
+                return
+            blocks.append((serial_counter, joined))
+            serial_counter += 1
+
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        if not line.strip():
+            # blank line denotes separation
+            push_current()
+            current_lines = []
+            continue
+
+        # If the line contains obvious table column separators, treat it as its own row
+        if "\t" in line or re.search(r"\s{2,}", line):
+            # push any accumulated prior lines first
+            if current_lines:
+                push_current()
+                current_lines = []
+            blocks.append((serial_counter, line.strip()))
+            serial_counter += 1
+            continue
+
+        # If the line contains a time range, it likely completes a row
+        if TIME_RE.search(line):
+            current_lines.append(line.strip())
+            push_current()
+            current_lines = []
+            continue
+
+        # Otherwise accumulate; some rows are split across lines
+        current_lines.append(line.strip())
+
+    # push any remaining
+    push_current()
+    return blocks
+
+
 def _normalize_semester_key(value: str) -> str:
     if not value:
         return ""
-    return re.sub(r"[^A-Z0-9/]+", "", value.upper())
+    normalized_display = _normalize_semester_display(value)
+    if not normalized_display:
+        return ""
+    return re.sub(r"[^A-Z0-9]+", "", normalized_display.upper())
 
 
 def _normalize_semester_display(value: str) -> str:
-    return _collapse_whitespace(value)
+    cleaned = _collapse_whitespace(value)
+    if not cleaned:
+        return ""
+
+    upper = cleaned.upper()
+    if "BS" in upper and "PSY" in upper:
+        match = re.search(r"BS\s*(?:\(|\s)?(?:PSY|PSYCHOLOGY)(?:\))?\s*(OPEN|\d+[A-Z]?)", upper)
+        if match:
+            suffix = match.group(1).strip()
+            suffix = "Open" if suffix == "OPEN" else suffix
+            return f"BS Psychology {suffix}"
+
+    slash_parts = [part.strip() for part in cleaned.split("/") if part.strip()]
+    if len(slash_parts) >= 2:
+        primary = slash_parts[0]
+
+        looks_like_section_label = re.compile(r"^[A-Za-z&().\s-]*\d+(?:\s+[A-Z])?$")
+        if looks_like_section_label.fullmatch(primary):
+            return _collapse_whitespace(primary)
+
+    return cleaned
 
 
 def _semester_matches_filters(item_values: Sequence[str], allowed_semesters: Optional[List[str]]) -> bool:
@@ -206,6 +392,9 @@ def _clean_course_title(text: str, course_code: str = "") -> str:
     if course_code and cleaned.upper().startswith(course_code.upper()):
         cleaned = _collapse_whitespace(cleaned[len(course_code):].strip(" -/.,"))
 
+    cleaned = re.sub(r"^(?:Lab|LAB)\s*:\s*", "", cleaned)
+    cleaned = re.sub(r"^(?:Lab|LAB)\s+", "", cleaned)
+
     # Some rows append an extra section marker after credits, e.g. "(3,0) B".
     cleaned = COURSE_CREDITS_SUFFIX_RE.sub("", cleaned)
     cleaned = COURSE_CREDITS_RE.sub("", cleaned)
@@ -229,8 +418,16 @@ def _parse_structured_row(serial_no: int, raw_text: str) -> Optional[Dict[str, o
         return None
 
     department, program, section, course, faculty, room, time_text, campus_text = parts
-    _, _, course_code = _extract_course_code(_collapse_whitespace(course).split())
     course_value = _collapse_whitespace(course)
+
+    course_code = ""
+    concatenated_match = re.match(r"^([A-Z]{2,6}\s*\d{2,4})([A-Z].+)$", course_value)
+    if concatenated_match:
+        course_code = _collapse_whitespace(concatenated_match.group(1))
+        course_value = _collapse_whitespace(f"{course_code} {concatenated_match.group(2)}")
+    else:
+        _, _, course_code = _extract_course_code(course_value.split())
+
     course_title = _clean_course_title(course_value, course_code)
     semester_display = _normalize_semester_display(section)
     semester_key = _normalize_semester_key(section)
@@ -331,10 +528,25 @@ def _split_section_and_course(text: str) -> Tuple[str, str, str]:
     if not cleaned:
         return "", "", ""
 
+    def _should_preserve_slash_section(value: str) -> bool:
+        parts = [part.strip() for part in value.split("/") if part.strip()]
+        if len(parts) < 2:
+          return False
+
+        def looks_like_section(part: str) -> bool:
+            upper = part.upper()
+            return bool(re.search(r"\d", part) or "OPEN" in upper or re.fullmatch(r"[A-Z]{2,6}(?:\s*&\s*[A-Z]{2,6})?", part.strip()))
+
+        return any(looks_like_section(part) for part in parts)
+
     tokens = cleaned.split()
     code_start, code_end, code_value = _extract_course_code(tokens)
     if code_start >= 0:
-        section_text = _extract_section_suffix(" ".join(tokens[:code_start])) or _collapse_whitespace(" ".join(tokens[:code_start]).strip(" -/"))
+        section_source = _collapse_whitespace(" ".join(tokens[:code_start]).strip(" -/"))
+        if _should_preserve_slash_section(section_source):
+            section_text = section_source
+        else:
+            section_text = _extract_section_suffix(section_source) or section_source
         course_text = _collapse_whitespace(" ".join(tokens[code_start:]))
         return section_text, course_text, code_value
 
@@ -356,7 +568,11 @@ def _split_section_and_course(text: str) -> Tuple[str, str, str]:
 
         section_end = index + 1
 
-    section_text = _extract_section_suffix(" ".join(tokens[:section_end])) or _collapse_whitespace(" ".join(tokens[:section_end]).strip(" -/"))
+    section_source = _collapse_whitespace(" ".join(tokens[:section_end]).strip(" -/"))
+    if _should_preserve_slash_section(section_source):
+        section_text = section_source
+    else:
+        section_text = _extract_section_suffix(section_source) or section_source
     course_text = _collapse_whitespace(" ".join(tokens[section_end:]))
     return section_text, course_text, ""
 
@@ -378,6 +594,42 @@ def _extract_faculty_and_course(text: str) -> Tuple[str, str]:
     
     if len(tokens) < 2:
         return "", cleaned
+
+    # Prefer a clean trailing human-name block over generic title words.
+    faculty_suffix_start = len(tokens)
+    saw_name_token = False
+    while faculty_suffix_start > 0:
+        token = tokens[faculty_suffix_start - 1].strip().strip(',;:')
+        upper = token.upper()
+
+        if not token or token in {'-', '–', '—', '/', '&', '.'}:
+            faculty_suffix_start -= 1
+            continue
+
+        if upper in FACULTY_SUFFIX_STOPWORDS:
+            break
+
+        if upper in NAME_PREFIXES or token.lower() in NAME_CONNECTORS or NAME_TOKEN_RE.fullmatch(token):
+            saw_name_token = True
+            faculty_suffix_start -= 1
+            continue
+
+        break
+
+    if saw_name_token:
+        suffix_tokens = [token for token in tokens[faculty_suffix_start:] if token not in {'-', '–', '—', '/', '&', '.'}]
+        prefix_offset = next((index for index, token in enumerate(suffix_tokens) if token.upper() in NAME_PREFIXES), -1)
+        if prefix_offset >= 0:
+            suffix_tokens = suffix_tokens[prefix_offset:]
+            faculty_suffix_start += prefix_offset
+
+        if len(suffix_tokens) >= 2 and not any(token.upper() in COURSE_KEYWORDS for token in suffix_tokens):
+            preceding_token = tokens[faculty_suffix_start - 1] if faculty_suffix_start > 0 else ''
+            if faculty_suffix_start == 0 or preceding_token.upper() in FACULTY_SUFFIX_STOPWORDS or not _is_name_token(preceding_token):
+                faculty = _collapse_whitespace(' '.join(suffix_tokens))
+                course = _collapse_whitespace(' '.join(tokens[:faculty_suffix_start]))
+                if course and faculty:
+                    return faculty, course
     
     # First, check for explicit prefixes like DR., PROF., etc.
     prefix_index = -1
@@ -386,9 +638,13 @@ def _extract_faculty_and_course(text: str) -> Tuple[str, str]:
             prefix_index = index
 
     if prefix_index >= 0:
-        end_index = prefix_index
+        end_index = prefix_index + 1
+
         while end_index < len(tokens) and _is_name_token(tokens[end_index]):
             end_index += 1
+
+        while prefix_index > 0 and tokens[prefix_index - 1].upper() in NAME_PREFIXES:
+            prefix_index -= 1
 
         faculty_tokens = tokens[prefix_index:end_index]
         if len(faculty_tokens) >= 2:
@@ -735,9 +991,88 @@ def _build_heuristic_item(serial_no: int, raw_text: str) -> Dict[str, object]:
 def _build_item(serial_no: int, raw_text: str) -> Dict[str, object]:
     structured_item = _parse_structured_row(serial_no, raw_text)
     if structured_item is not None:
+        # Expand slash-separated section cells into multiple items.
+        # Use the original raw section text when available so we don't lose
+        # parts during earlier normalization (e.g. the parser may canonicalize
+        # a combined "BSSS 1 / BS Psychology 1" to "BS Psychology 1" which
+        # would prevent expansion). Prefer `semester_original` for detecting
+        # slashes, falling back to the already-normalized `section` value.
+        section_original = structured_item.get("semester_original") or ""
+        section_val = section_original or structured_item.get("section") or structured_item.get("semester_display") or ""
+        if "/" in section_original:
+            parts = [p.strip() for p in section_original.split("/") if p.strip()]
+            # Only expand when parts look like section labels (contain digits or 'OPEN')
+            def looks_like_section(p: str) -> bool:
+                up = p.upper()
+                if "OPEN" in up:
+                    return True
+                if re.search(r"\d", p):
+                    return True
+                # Long descriptive parts are likely sections too
+                if len(p) > 6 and not re.fullmatch(r"[A-Z]{2,6}$", p.strip()):
+                    return True
+                return False
+
+            if all(not looks_like_section(p) for p in parts):
+                # treat as program acronyms; don't expand
+                return structured_item
+
+            expanded = []
+            for part in parts:
+                # Clean the part by extracting a section-like suffix if present
+                candidate = _extract_section_suffix(part) or part
+                copy = dict(structured_item)
+                display = _normalize_semester_display(candidate)
+                key = _normalize_semester_key(candidate)
+                copy.update({
+                    "section": display,
+                    "semester": key,
+                    "semester_key": key,
+                    "semester_display": display,
+                    "semester_original": candidate,
+                    "class_section": display,
+                })
+                expanded.append(copy)
+            return expanded
         return structured_item
 
-    return _build_heuristic_item(serial_no, raw_text)
+    # Heuristic path: build item and also expand slash-separated semester labels
+    heuristic_item = _build_heuristic_item(serial_no, raw_text)
+    section_original = str(heuristic_item.get("semester_original") or "")
+    if "/" in section_original:
+        parts = [p.strip() for p in section_original.split("/") if p.strip()]
+
+        def looks_like_section(p: str) -> bool:
+            up = p.upper()
+            if "OPEN" in up:
+                return True
+            if re.search(r"\d", p):
+                return True
+            if len(p) > 6 and not re.fullmatch(r"[A-Z]{2,6}$", p.strip()):
+                return True
+            return False
+
+        if all(not looks_like_section(p) for p in parts):
+            return heuristic_item
+
+        expanded = []
+        for part in parts:
+            candidate = _extract_section_suffix(part) or part
+            copy = dict(heuristic_item)
+            display = _normalize_semester_display(candidate)
+            key = _normalize_semester_key(candidate)
+            copy.update({
+                "section": display,
+                "semester": key,
+                "semester_key": key,
+                "semester_display": display,
+                "semester_original": candidate,
+                "class_section": display,
+            })
+            expanded.append(copy)
+        return expanded
+
+    return heuristic_item
 
 
 def parse_html_with_advanced_pandas(html: str, allowed_semesters: Optional[List[str]] = None) -> List[Dict]:
@@ -749,23 +1084,45 @@ def parse_html_with_advanced_pandas(html: str, allowed_semesters: Optional[List[
     if not html:
         return []
 
+    # Prefer parsing actual HTML tables when present because many emails use
+    # table-based layout (cells correspond to columns). This produces robust
+    # tab-separated rows which the structured parser can consume reliably.
+    table_rows = _parse_html_table_rows(html)
+    # Always convert HTML to plain text early; some fallback logic needs it.
     text = _html_to_text(html)
-    row_blocks = _iter_row_blocks(text)
+    if table_rows:
+        row_blocks = table_rows
+    else:
+        row_blocks = _iter_row_blocks(text)
+    # Use the fallback splitter only when the strict splitter finds nothing,
+    # or when the source looks like HTML with table elements and the fallback
+    # produces more detailed blocks.
+    fallback = None
     if not row_blocks:
-        return []
+        fallback = _iter_row_blocks_fallback(text)
+        if not fallback:
+            return []
+        row_blocks = fallback
+    else:
+        if "<table" in html.lower() or "<td" in html.lower():
+            fallback = _iter_row_blocks_fallback(text)
+            if fallback and len(fallback) > len(row_blocks):
+                row_blocks = fallback
 
     items: List[Dict] = []
     for serial_no, row_text in row_blocks:
         item = _build_item(serial_no, row_text)
-        if _semester_matches_filters(
-            [
-                str(item.get("semester", "")),
-                str(item.get("semester_display", "")),
-                str(item.get("semester_original", "")),
-            ],
-            allowed_semesters,
-        ):
-            items.append(item)
+        candidates = item if isinstance(item, list) else [item]
+        for cand in candidates:
+            if _semester_matches_filters(
+                [
+                    str(cand.get("semester", "")),
+                    str(cand.get("semester_display", "")),
+                    str(cand.get("semester_original", "")),
+                ],
+                allowed_semesters,
+            ):
+                items.append(cand)
 
     return items
 

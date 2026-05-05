@@ -7,18 +7,39 @@ import sys
 import json
 import logging
 import socket
+import re
 from datetime import datetime
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, session, redirect
 from flask_cors import CORS
 
 # Backend imports are now local since all backend code is in this directory
 
 app = Flask(__name__)
-# CORS configuration to allow network access
-# More permissive CORS for development
-CORS(app, origins=["*"], supports_credentials=True, 
-     allow_headers=['Content-Type', 'Authorization', 'X-User-Email'],
-     methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
+# Simple dev secret key so Flask session can store PKCE state/code_verifier
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-change-me')
+# Cross-site session cookies are required because the frontend talks to ngrok over XHR.
+app.config.update(
+    SESSION_COOKIE_SAMESITE='None',
+    SESSION_COOKIE_SECURE=True,
+)
+
+# CORS configuration for local dev + ngrok
+allowed_origin_patterns = [
+    r"^http://localhost:\d+$",
+    r"^http://127\.0\.0\.1:\d+$",
+    r"^http://192\.168\.\d+\.\d+:\d+$",
+    r"^https://.*\.ngrok-free\.dev$",
+    r"^https://.*\.ngrok-free\.app$",
+    r"^https://.*\.ngrok\.io$",
+]
+
+CORS(
+    app,
+    resources={r"/api/.*": {"origins": allowed_origin_patterns}},
+    supports_credentials=True,
+    allow_headers=['Content-Type', 'Authorization', 'X-User-Email'],
+    methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+)
 
 # Enhanced logging setup
 logging.basicConfig(
@@ -38,6 +59,66 @@ logging.getLogger('database.supabase_client').setLevel(logging.WARNING)
 from scraper.scheduler import run_once
 from scraper.config import settings
 from database.supabase_client import supabase_manager
+
+
+OAUTH_STATE_TTL_SECONDS = 600
+oauth_state_store = {}
+
+
+def _cleanup_oauth_state_store():
+    now_ts = datetime.now().timestamp()
+    expired_states = [
+        state_key
+        for state_key, state_data in oauth_state_store.items()
+        if now_ts - state_data.get('created_at', 0) > OAUTH_STATE_TTL_SECONDS
+    ]
+    for state_key in expired_states:
+        oauth_state_store.pop(state_key, None)
+
+
+def _store_oauth_state(state, code_verifier, frontend_origin):
+    _cleanup_oauth_state_store()
+    oauth_state_store[state] = {
+        'code_verifier': code_verifier,
+        'frontend_origin': frontend_origin,
+        'created_at': datetime.now().timestamp(),
+    }
+
+
+def _pop_oauth_state(state):
+    _cleanup_oauth_state_store()
+    if not state:
+        return None
+    return oauth_state_store.pop(state, None)
+
+
+def get_public_origin():
+    """Return the externally reachable origin for this backend."""
+    env_origin = os.environ.get('PUBLIC_BACKEND_URL')
+    if env_origin:
+        return env_origin.rstrip('/')
+
+    forwarded_host = request.headers.get('X-Forwarded-Host') or request.headers.get('X-Original-Host')
+    forwarded_proto = request.headers.get('X-Forwarded-Proto') or 'http'
+
+    if forwarded_host:
+        return f"{forwarded_proto}://{forwarded_host}".rstrip('/')
+
+    return request.host_url.rstrip('/')
+
+
+def get_redirect_uri():
+    return get_public_origin() + '/api/auth/gmail/callback'
+
+def get_public_request_url():
+    """Return the externally visible URL for the current request."""
+    public_origin = get_public_origin()
+    full_path = request.full_path
+
+    if full_path.endswith('?'):
+        full_path = full_path[:-1]
+
+    return public_origin + request.path + (f'?{request.query_string.decode("utf-8")}' if request.query_string else '')
 
 def get_local_ip():
     """Get the local IP address dynamically"""
@@ -99,12 +180,7 @@ def oauth_config_info():
         # Show what redirect URI would be generated
         origin = request.headers.get('Origin', '')
         host = request.headers.get('Host', f'localhost:{BACKEND_PORT}')
-        
-        if '192.168.' in origin:
-            redirect_host = origin.split('://')[1].split(':')[0] + f':{BACKEND_PORT}'
-            redirect_uri = f'http://{redirect_host}/api/auth/gmail/callback'
-        else:
-            redirect_uri = 'http://localhost:5000/api/auth/gmail/callback'
+        redirect_uri = get_redirect_uri()
         
         # Load and show current OAuth config
         import os
@@ -114,6 +190,7 @@ def oauth_config_info():
             'current_redirect_uri': redirect_uri,
             'request_origin': origin,
             'request_host': host,
+            'public_origin': get_public_origin(),
             'client_secrets_exists': os.path.exists(client_secrets_file)
         }
         
@@ -159,10 +236,18 @@ def gmail_auth():
                    'openid']
         )
         
-        # Always use localhost for OAuth redirects (Google OAuth requirement)
-        # This works even when accessing from network devices because OAuth happens in popup/redirect
-        redirect_uri = 'http://localhost:5000/api/auth/gmail/callback'
-        
+        # Save the frontend origin so the callback can redirect back correctly.
+        frontend_origin = request.args.get('frontend_origin') or request.headers.get('Origin') or request.headers.get('Referer', '').rstrip('/')
+        if frontend_origin:
+            try:
+                session['frontend_origin'] = frontend_origin
+                logger.info(f"Stored frontend origin in session: {frontend_origin}")
+            except Exception as sess_err:
+                logger.warning(f"Could not store frontend origin in session: {sess_err}")
+
+        # Build redirect URI from the externally reachable backend origin.
+        redirect_uri = get_redirect_uri()
+
         flow.redirect_uri = redirect_uri
         logger.info(f"Using OAuth redirect URI: {redirect_uri}")
         logger.info(f"Request origin: {request.headers.get('Origin', 'None')}")
@@ -176,8 +261,28 @@ def gmail_auth():
         )
         
         logger.info(f"Generated Gmail OAuth URL: {authorization_url}")
-        
-        # Store state in session or return it to frontend
+        # Persist PKCE code_verifier and state in Flask session so callback can complete
+        try:
+            session['auth_state'] = state
+            # Flow may have generated a code_verifier for PKCE
+            code_verifier = None
+            if hasattr(flow, 'code_verifier') and flow.code_verifier:
+                code_verifier = flow.code_verifier
+                session['code_verifier'] = code_verifier
+                logger.info('Stored PKCE code_verifier in session')
+
+            # Also persist in server memory keyed by state to survive cross-domain cookie issues.
+            _store_oauth_state(state, code_verifier, frontend_origin)
+            logger.info('Stored OAuth state metadata in server cache')
+        except Exception as sess_err:
+            logger.warning(f'Could not store session data for PKCE: {sess_err}')
+
+        # For browser-driven mobile flows, redirect directly to Google so the user sees the consent page.
+        if request.args.get('redirect') == '1':
+            logger.info('Returning HTTP redirect to Google OAuth URL')
+            return redirect(authorization_url)
+
+        # Return url/state to frontend
         return jsonify({
             'auth_url': authorization_url,
             'state': state
@@ -208,18 +313,40 @@ def gmail_callback():
                    'https://www.googleapis.com/auth/userinfo.profile',
                    'openid']
         )
-        # Always use localhost for OAuth redirects (Google OAuth requirement)
-        redirect_uri = 'http://localhost:5000/api/auth/gmail/callback'
-        
+        # Build redirect URI from the externally reachable backend origin.
+        redirect_uri = get_redirect_uri()
+
         flow.redirect_uri = redirect_uri
         logger.info(f"Using OAuth callback redirect URI: {redirect_uri}")
         logger.info(f"Request origin: {request.headers.get('Origin', 'None')}")
         logger.info(f"Request host: {request.headers.get('Host', 'None')}")
         
         # Get the authorization response
-        authorization_response = request.url
+        authorization_response = get_public_request_url()
         logger.info(f"Authorization response: {authorization_response}")
+
+        callback_state = request.args.get('state')
+        state_data = _pop_oauth_state(callback_state)
+        if state_data:
+            logger.info('Loaded OAuth state metadata from server cache')
+        else:
+            logger.warning('OAuth state metadata not found in server cache')
+
+        frontend_origin_from_state = state_data.get('frontend_origin') if state_data else None
         
+        # Before fetching token, restore PKCE code_verifier from session if present
+        try:
+            code_verifier = state_data.get('code_verifier') if state_data else None
+            if not code_verifier:
+                code_verifier = session.get('code_verifier')
+            if code_verifier and hasattr(flow, 'code_verifier'):
+                flow.code_verifier = code_verifier
+                logger.info('Restored PKCE code_verifier from session')
+            else:
+                logger.warning('No PKCE code_verifier available for callback')
+        except Exception as sess_err:
+            logger.warning(f'Could not read PKCE code_verifier from session: {sess_err}')
+
         # Fetch the token (this may fail if scopes don't match)
         try:
             flow.fetch_token(authorization_response=authorization_response)
@@ -245,9 +372,9 @@ def gmail_callback():
                         scopes=actual_scopes
                     )
                     
-                    # Always use localhost for OAuth redirects (Google OAuth requirement)
-                    redirect_uri = 'http://localhost:5000/api/auth/gmail/callback'
-                    
+                    # Build fallback redirect URI from the incoming request host
+                    redirect_uri = request.host_url.rstrip('/') + '/api/auth/gmail/callback'
+
                     flow.redirect_uri = redirect_uri
                     logger.info(f"Using fallback OAuth callback redirect URI: {redirect_uri}")
                 
@@ -305,17 +432,18 @@ def gmail_callback():
         supabase_manager.save_user_tokens(user['id'], token_data)
         logger.info(f"Saved Gmail tokens for user: {user_email}")
         
-        # Get frontend URL dynamically based on referrer or request origin
-        frontend_url = f'http://localhost:{FRONTEND_PORT}'  # default
-        
-        # Check referer header to determine frontend origin
+        # Get frontend URL from the session (set when auth started)
+        frontend_url = frontend_origin_from_state or session.get('frontend_origin') or f'http://{LOCAL_IP}:{FRONTEND_PORT}'
+
+        # Fallbacks if the session is missing
         referer = request.headers.get('Referer', '')
         user_agent = request.headers.get('User-Agent', '')
-        
-        if LOCAL_IP in referer:
-            frontend_url = f'http://{LOCAL_IP}:{FRONTEND_PORT}'
-        elif 'localhost:3000' in referer or '127.0.0.1:3000' in referer:
-            frontend_url = f'http://localhost:{FRONTEND_PORT}'
+
+        if not (frontend_origin_from_state or session.get('frontend_origin')):
+            if LOCAL_IP in referer:
+                frontend_url = f'http://{LOCAL_IP}:{FRONTEND_PORT}'
+            elif 'localhost:3000' in referer or '127.0.0.1:3000' in referer:
+                frontend_url = f'http://localhost:{FRONTEND_PORT}'
         
         # Check if this is a mobile browser (Safari, iOS, etc.)
         is_mobile = any(mobile_agent in user_agent.lower() for mobile_agent in 
@@ -349,12 +477,14 @@ def gmail_callback():
             """
         else:
             # Desktop popup flow - use postMessage
+            frontend_origin = frontend_origin_from_state or session.get('frontend_origin') or f'http://localhost:{FRONTEND_PORT}'
             return f"""
             <html>
             <body>
             <script>
             // Try to communicate with parent window using multiple target origins
             const targetOrigins = [
+                '{frontend_origin}',
                 'http://localhost:3000',
                 'http://127.0.0.1:3000', 
                 'http://{LOCAL_IP}:{FRONTEND_PORT}'
@@ -389,14 +519,22 @@ def gmail_callback():
         # Get frontend URL for redirect
         frontend_url = f'http://localhost:{FRONTEND_PORT}'  # default
         
-        # Check referer header to determine frontend origin
+        # Get frontend URL from the session (set when auth started)
+        callback_state = request.args.get('state')
+        state_data = _pop_oauth_state(callback_state)
+        frontend_origin_from_state = state_data.get('frontend_origin') if state_data else None
+
+        frontend_url = frontend_origin_from_state or session.get('frontend_origin') or f'http://{LOCAL_IP}:{FRONTEND_PORT}'
+
+        # Fallbacks if the session is missing
         referer = request.headers.get('Referer', '')
         user_agent = request.headers.get('User-Agent', '')
-        
-        if LOCAL_IP in referer:
-            frontend_url = f'http://{LOCAL_IP}:{FRONTEND_PORT}'
-        elif 'localhost:3000' in referer or '127.0.0.1:3000' in referer:
-            frontend_url = f'http://localhost:{FRONTEND_PORT}'
+
+        if not (frontend_origin_from_state or session.get('frontend_origin')):
+            if LOCAL_IP in referer:
+                frontend_url = f'http://{LOCAL_IP}:{FRONTEND_PORT}'
+            elif 'localhost:3000' in referer or '127.0.0.1:3000' in referer:
+                frontend_url = f'http://localhost:{FRONTEND_PORT}'
         
         # Check if this is a mobile browser
         is_mobile = any(mobile_agent in user_agent.lower() for mobile_agent in 
@@ -428,12 +566,14 @@ def gmail_callback():
             """
         else:
             # Desktop popup flow
+            frontend_origin = frontend_origin_from_state or session.get('frontend_origin') or f'http://localhost:{FRONTEND_PORT}'
             return f"""
             <html>
             <body>
         <script>
         // Try to communicate with parent window using multiple target origins
         const targetOrigins = [
+            '{frontend_origin}',
             'http://localhost:3000',
             'http://127.0.0.1:3000', 
             'http://{LOCAL_IP}:{FRONTEND_PORT}'
@@ -516,37 +656,58 @@ def update_semesters():
         return '', 200
         
     try:
+        logger.info('📨 [UPDATE_SEMESTERS] Received request')
+        logger.info(f'📨 [UPDATE_SEMESTERS] Headers: {dict(request.headers)}')
+        
         user, error_response, status_code = get_user_from_request()
         if error_response:
+            logger.error('❌ [UPDATE_SEMESTERS] Failed to get user')
             return error_response, status_code
+        
+        logger.info(f'✅ [UPDATE_SEMESTERS] User: {user["email"]}')
             
         data = request.get_json()
+        logger.info(f'📨 [UPDATE_SEMESTERS] Received JSON data: {data}')
+        
         if not data or 'semesters' not in data:
+            logger.error('❌ [UPDATE_SEMESTERS] Missing semesters data')
             return jsonify({'error': 'Missing semesters data'}), 400
         
         new_semesters = data['semesters']
+        logger.info(f'📨 [UPDATE_SEMESTERS] New semesters: {new_semesters}')
+        
         if not isinstance(new_semesters, list):
+            logger.error('❌ [UPDATE_SEMESTERS] Semesters is not a list')
             return jsonify({'error': 'Semesters must be a list'}), 400
 
         # Get current user settings
+        logger.info(f'📨 [UPDATE_SEMESTERS] Getting current settings for user {user["id"]}')
         current_settings = supabase_manager.get_user_settings(user['id'])
+        logger.info(f'📨 [UPDATE_SEMESTERS] Current settings: {current_settings}')
+        
         current_settings['allowed_semesters'] = new_semesters
+        logger.info(f'📨 [UPDATE_SEMESTERS] Updated settings: {current_settings}')
         
         # Save updated settings to Supabase
+        logger.info(f'📨 [UPDATE_SEMESTERS] Saving to Supabase...')
         success = supabase_manager.save_user_settings(user['id'], current_settings)
+        logger.info(f'📨 [UPDATE_SEMESTERS] Save result: {success}')
         
         if success:
-            logger.info(f"Updated allowed semesters for user {user['email']}: {new_semesters}")
-            return jsonify({
+            logger.info(f"✅ [UPDATE_SEMESTERS] Updated allowed semesters for user {user['email']}: {new_semesters}")
+            response = {
                 'success': True,
                 'message': f'Updated {len(new_semesters)} allowed semesters',
                 'semesters': new_semesters
-            })
+            }
+            logger.info(f'📤 [UPDATE_SEMESTERS] Returning response: {response}')
+            return jsonify(response)
         else:
+            logger.error('❌ [UPDATE_SEMESTERS] Failed to save settings to Supabase')
             return jsonify({'error': 'Failed to save settings'}), 500
             
     except Exception as e:
-        logger.error(f"Error updating semesters: {e}")
+        logger.error(f"❌ [UPDATE_SEMESTERS] Error: {e}", exc_info=True)
         return jsonify({
             'success': False,
             'error': str(e)
@@ -644,7 +805,8 @@ def get_latest_timetable():
         logger.info(f"Getting timetable for user: {user['email']}")
         # Get latest timetable cache from Supabase
         cache_data = supabase_manager.get_latest_timetable_cache(user['id'])
-        
+        latest_ts = supabase_manager.get_latest_timetable_timestamp(user['id'])
+
         if not cache_data:
             logger.info("No cached timetable data found")
             return jsonify({
@@ -652,12 +814,15 @@ def get_latest_timetable():
                 'message': 'No cached schedule data found. Run a scrape first.',
                 'timestamp': datetime.now().isoformat()
             }), 404
-            
-        logger.info("Returning cached timetable data")
+
+        # Use cache created_at (when available) so frontend shows true scrape/cache time.
+        response_ts = latest_ts or datetime.now().isoformat()
+
+        logger.info("Returning cached timetable data with timestamp: %s", response_ts)
         return jsonify({
             'success': True,
             'data': cache_data,
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': response_ts,
             'cached': True,
         })
             
@@ -677,28 +842,17 @@ def get_status():
         user, error_response, status_code = get_user_from_request()
         user_id = user.get('id') if user else None
         
-        # Get latest timestamp from Supabase (user-specific or global)
+        # Get latest user-specific timetable cache timestamp from Supabase.
+        # This must represent when data was actually fetched/scraped.
         latest_timestamp = supabase_manager.get_latest_timetable_timestamp(user_id)
-        
-        # Also check local cache file as fallback
-        cache_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'cache', 'last_checked.json')
-        cache_exists = os.path.exists(cache_file)
-        local_timestamp = None
-        
-        if cache_exists:
-            stat = os.stat(cache_file)
-            local_timestamp = datetime.fromtimestamp(stat.st_mtime).isoformat()
-        
-        # Use the most recent timestamp (Supabase or local)
+
         last_update = latest_timestamp
-        if local_timestamp and (not latest_timestamp or local_timestamp > latest_timestamp):
-            last_update = local_timestamp
         
         status_data = {
             'timestamp': datetime.now().isoformat(),
-            'cache_exists': cache_exists or (latest_timestamp is not None),
+            'cache_exists': latest_timestamp is not None,
             'last_update': last_update,
-            'source': 'supabase' if latest_timestamp else ('local' if local_timestamp else 'none')
+            'source': 'supabase' if latest_timestamp else 'none'
         }
         
         return jsonify({

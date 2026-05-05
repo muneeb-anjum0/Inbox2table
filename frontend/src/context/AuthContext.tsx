@@ -32,8 +32,19 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const apiBaseOrigin = apiService.getBaseOrigin();
 
   useEffect(() => {
+    // Ensure API base URL is detected before performing auth-related network actions
+    (async () => {
+      try {
+        const selected = await apiService.initialize();
+        console.log('[Auth] API initialized with base:', selected);
+      } catch (e) {
+        console.warn('[Auth] API initialization failed, proceeding with defaults', e);
+      }
+    })();
+
     // Check for OAuth callback parameters (mobile redirect flow)
     const urlParams = new URLSearchParams(window.location.search);
     
@@ -91,14 +102,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const allowedOrigins = [
         'http://localhost:5000',
         'http://127.0.0.1:5000',
-        'http://192.168.100.250:5000'
+        'http://192.168.100.250:5000',
+        apiBaseOrigin,
       ];
-      
-      // Be more permissive for OAuth callbacks since they come from localhost:5000
-      // Also allow messages from network IPs for mobile devices
-      const isAllowedOrigin = event.origin.startsWith('http://localhost:') || 
-                             event.origin.startsWith('http://127.0.0.1:') || 
-                             event.origin.startsWith('http://192.168.');
+
+      // Allow the active backend origin plus local development origins.
+      const isAllowedOrigin =
+        event.origin === apiBaseOrigin ||
+        event.origin.startsWith('http://localhost:') || 
+        event.origin.startsWith('http://127.0.0.1:') || 
+        event.origin.startsWith('http://192.168.') ||
+        event.origin.startsWith('https://') && event.origin.includes('.ngrok-');
       
       if (!isAllowedOrigin) {
         console.log('[Mobile Debug] Ignoring message from unauthorized origin:', event.origin);
@@ -150,8 +164,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.log('Is mobile device:', isMobile);
       console.log('User agent:', navigator.userAgent);
       console.log('Current origin:', window.location.origin);
-      
-      const authData = await apiService.getGmailAuthUrl();
+
+      if (isMobile) {
+        console.log('Mobile detected: using direct backend redirect for Gmail auth');
+        const mobileAuthUrl = `${apiBaseOrigin}/api/auth/gmail?redirect=1&frontend_origin=${encodeURIComponent(window.location.origin)}`;
+        window.location.href = mobileAuthUrl;
+        return true;
+      }
+
+      const authData = await apiService.getGmailAuthUrl(window.location.origin);
       console.log('Got auth URL:', authData.auth_url);
       
       // Try popup first, but have fallback for mobile
@@ -164,14 +185,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (!popup || popup.closed || typeof popup.closed === 'undefined') {
         console.warn('Popup blocked or failed to open, redirecting to full page auth...');
         
-        if (isMobile) {
-          // For mobile, redirect to auth URL in the same window
-          console.log('Mobile detected: redirecting to auth URL in same window');
-          window.location.href = authData.auth_url;
-          return true;
-        } else {
-          throw new Error('Popup blocked. Please allow popups for this site or try on mobile.');
-        }
+        throw new Error('Popup blocked. Please allow popups for this site.');
       }
       
       console.log('Popup opened successfully, waiting for auth completion...');

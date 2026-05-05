@@ -98,21 +98,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         timestamp: new Date().toISOString()
       });
       
-      // Allow messages from any localhost port (for OAuth callback)
-      const allowedOrigins = [
-        'http://localhost:5000',
-        'http://127.0.0.1:5000',
-        'http://192.168.100.250:5000',
-        apiBaseOrigin,
-      ];
-
       // Allow the active backend origin plus local development origins.
       const isAllowedOrigin =
         event.origin === apiBaseOrigin ||
         event.origin.startsWith('http://localhost:') || 
         event.origin.startsWith('http://127.0.0.1:') || 
         event.origin.startsWith('http://192.168.') ||
-        event.origin.startsWith('https://') && event.origin.includes('.ngrok-');
+        (event.origin.startsWith('https://') && event.origin.includes('.ngrok-'));
       
       if (!isAllowedOrigin) {
         console.log('[Mobile Debug] Ignoring message from unauthorized origin:', event.origin);
@@ -152,7 +144,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return () => {
       window.removeEventListener('message', handleGmailAuthMessage);
     };
-  }, []);
+  }, [apiBaseOrigin]);
 
   const loginWithGmail = async (): Promise<boolean> => {
     try {

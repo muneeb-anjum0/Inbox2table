@@ -152,7 +152,7 @@ function AppContent() {
   };
   const [timetableData, setTimetableData] = useState<TimetableData | null>(null);
   const [config, setConfig] = useState<ConfigData | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [, setIsLoading] = useState(false);
   const [isScraperRunning, setIsScraperRunning] = useState(false);
   const [isSemesterUpdateRunning, setIsSemesterUpdateRunning] = useState(false);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error' | 'warning'>('idle');
@@ -358,6 +358,9 @@ function AppContent() {
       loadConfig();
       checkStatus();
     }
+    // loadLatestTimetable/loadConfig/checkStatus are defined in component scope and intentionally
+    // invoked only when auth status flips to avoid redundant startup fetch loops.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
   // Check for no semesters configured and set warning message

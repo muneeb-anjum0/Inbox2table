@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mail, LogIn, AlertCircle, Calendar } from 'lucide-react';
+import { Mail, AlertCircle, Calendar } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const LoginScreen: React.FC = () => {

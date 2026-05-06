@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mail, AlertCircle, CalendarDays, ShieldCheck, Sparkles } from 'lucide-react';
+import { AlertCircle, CalendarDays, ShieldCheck, Sparkles } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import './LoginScreen.css';
 

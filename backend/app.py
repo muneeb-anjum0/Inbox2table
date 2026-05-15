@@ -158,11 +158,9 @@ BACKEND_PORT = int(os.environ.get('PORT', 5000))
 def get_user_from_request():
     """Extract user email from request headers or JSON"""
     user_email = request.headers.get('X-User-Email')
-    logger.info(f"X-User-Email header: {user_email}")
     
     if not user_email and request.is_json:
         user_email = request.json.get('user_email')
-        logger.info(f"user_email from JSON: {user_email}")
     
     if not user_email:
         logger.warning("No user email found in request")
@@ -170,7 +168,6 @@ def get_user_from_request():
         
     try:
         user = supabase_manager.get_or_create_user(user_email)
-        logger.info(f"Found/created user: {user['email']}")
         return user, None, None
     except Exception as e:
         logger.error(f"Error getting user: {e}")
@@ -264,7 +261,6 @@ def gmail_auth():
         if frontend_origin:
             try:
                 session['frontend_origin'] = frontend_origin
-                logger.info(f"Stored frontend origin in session: {frontend_origin}")
             except Exception as sess_err:
                 logger.warning(f"Could not store frontend origin in session: {sess_err}")
 
@@ -272,31 +268,20 @@ def gmail_auth():
         redirect_uri = get_redirect_uri()
 
         flow.redirect_uri = redirect_uri
-        logger.info(f"Using OAuth redirect URI: {redirect_uri}")
-        logger.info(f"Request origin: {request.headers.get('Origin', 'None')}")
-        logger.info(f"Request host: {request.headers.get('Host', 'None')}")
         
-        # Generate authorization URL
         authorization_url, state = flow.authorization_url(
             access_type='offline',
             include_granted_scopes='true',
-            prompt='consent'  # Force consent screen to ensure fresh tokens
+            prompt='consent'
         )
-        
-        logger.info(f"Generated Gmail OAuth URL: {authorization_url}")
-        # Persist PKCE code_verifier and state in Flask session so callback can complete
         try:
             session['auth_state'] = state
-            # Flow may have generated a code_verifier for PKCE
             code_verifier = None
             if hasattr(flow, 'code_verifier') and flow.code_verifier:
                 code_verifier = flow.code_verifier
                 session['code_verifier'] = code_verifier
-                logger.info('Stored PKCE code_verifier in session')
 
-            # Also persist in server memory keyed by state to survive cross-domain cookie issues.
             _store_oauth_state(state, code_verifier, frontend_origin)
-            logger.info('Stored OAuth state metadata in server cache')
         except Exception as sess_err:
             logger.warning(f'Could not store session data for PKCE: {sess_err}')
 
@@ -340,66 +325,41 @@ def gmail_callback():
         redirect_uri = get_redirect_uri()
 
         flow.redirect_uri = redirect_uri
-        logger.info(f"Using OAuth callback redirect URI: {redirect_uri}")
-        logger.info(f"Request origin: {request.headers.get('Origin', 'None')}")
-        logger.info(f"Request host: {request.headers.get('Host', 'None')}")
         
-        # Get the authorization response
         authorization_response = get_public_request_url()
-        logger.info(f"Authorization response: {authorization_response}")
 
         callback_state = request.args.get('state')
         state_data = _pop_oauth_state(callback_state)
-        if state_data:
-            logger.info('Loaded OAuth state metadata from server cache')
-        else:
-            logger.warning('OAuth state metadata not found in server cache')
 
         frontend_origin_from_state = state_data.get('frontend_origin') if state_data else None
         
-        # Before fetching token, restore PKCE code_verifier from session if present
         try:
             code_verifier = state_data.get('code_verifier') if state_data else None
             if not code_verifier:
                 code_verifier = session.get('code_verifier')
             if code_verifier and hasattr(flow, 'code_verifier'):
                 flow.code_verifier = code_verifier
-                logger.info('Restored PKCE code_verifier from session')
-            else:
-                logger.warning('No PKCE code_verifier available for callback')
         except Exception as sess_err:
             logger.warning(f'Could not read PKCE code_verifier from session: {sess_err}')
 
-        # Fetch the token (this may fail if scopes don't match)
         try:
             flow.fetch_token(authorization_response=authorization_response)
         except Exception as token_error:
-            logger.error(f"Token fetch error: {token_error}")
-            # If scope mismatch, create a new flow with no scope validation
             if "scope" in str(token_error).lower():
-                logger.warning("Scope mismatch detected, creating flexible flow...")
-                
-                # Create a more flexible flow by parsing the actual returned scopes
                 import urllib.parse as urlparse
                 parsed_url = urlparse.urlparse(authorization_response)
                 query_params = urlparse.parse_qs(parsed_url.query)
                 
-                # Get the actual scopes returned by Google
                 if 'scope' in query_params:
                     actual_scopes = query_params['scope'][0].split(' ')
-                    logger.info(f"Actual scopes returned by Google: {actual_scopes}")
                     
-                    # Create new flow with actual scopes and dynamic redirect URI
                     flow = Flow.from_client_secrets_file(
                         client_secrets_file,
                         scopes=actual_scopes
                     )
                     
-                    # Build fallback redirect URI from the incoming request host
                     redirect_uri = request.host_url.rstrip('/') + '/api/auth/gmail/callback'
-
                     flow.redirect_uri = redirect_uri
-                    logger.info(f"Using fallback OAuth callback redirect URI: {redirect_uri}")
                 
                 flow.fetch_token(authorization_response=authorization_response)
             else:
@@ -415,28 +375,22 @@ def gmail_callback():
         user_email = None
         
         try:
-            # Method 1: Try Gmail API to get profile
             gmail_service = build('gmail', 'v1', credentials=credentials)
             profile = gmail_service.users().getProfile(userId='me').execute()
             user_email = profile['emailAddress']
-            logger.info(f"Got user email from Gmail API: {user_email}")
-        except Exception as gmail_error:
-            logger.warning(f"Gmail API profile fetch failed: {gmail_error}")
-            
+        except Exception:
             try:
-                # Method 2: Try userinfo API
                 userinfo_service = build('oauth2', 'v2', credentials=credentials)
                 userinfo = userinfo_service.userinfo().get().execute()
                 user_email = userinfo.get('email')
-                logger.info(f"Got user email from UserInfo API: {user_email}")
             except Exception as userinfo_error:
-                logger.error(f"UserInfo API failed: {userinfo_error}")
+                logger.error(f"Could not retrieve user email: {userinfo_error}")
                 raise Exception("Could not retrieve user email from any API")
         
         if not user_email:
             raise Exception("No user email found in OAuth response")
         
-        logger.info(f"Gmail OAuth successful for user: {user_email}")
+        logger.info(f"OAuth successful for user: {user_email}")
         
         # Create or get user in Supabase
         user = supabase_manager.get_or_create_user(user_email)
@@ -453,7 +407,6 @@ def gmail_callback():
         }
         
         supabase_manager.save_user_tokens(user['id'], token_data)
-        logger.info(f"Saved Gmail tokens for user: {user_email}")
         
         # Get frontend URL from the session (set when auth started)
         frontend_url = frontend_origin_from_state or session.get('frontend_origin') or f'http://{LOCAL_IP}:{FRONTEND_PORT}'
@@ -472,8 +425,6 @@ def gmail_callback():
         is_mobile = any(mobile_agent in user_agent.lower() for mobile_agent in 
                        ['mobile', 'android', 'iphone', 'ipad', 'ipod', 'blackberry', 'opera mini'])
         
-        logger.info(f"OAuth callback - Frontend URL: {frontend_url}, Mobile: {is_mobile}, User-Agent: {user_agent}")
-        
         if is_mobile:
             # For mobile browsers, redirect directly to frontend with auth data in URL
             import urllib.parse
@@ -483,7 +434,6 @@ def gmail_callback():
                 'email': user_email
             })
             redirect_url = f"{frontend_url}?{auth_data}"
-            logger.info(f"Mobile redirect to: {redirect_url}")
             
             return f"""
             <html>
@@ -562,8 +512,6 @@ def gmail_callback():
         # Check if this is a mobile browser
         is_mobile = any(mobile_agent in user_agent.lower() for mobile_agent in 
                        ['mobile', 'android', 'iphone', 'ipad', 'ipod', 'blackberry', 'opera mini'])
-        
-        logger.info(f"OAuth error callback - Frontend URL: {frontend_url}, Mobile: {is_mobile}")
         
         if is_mobile:
             # For mobile browsers, redirect to frontend with error

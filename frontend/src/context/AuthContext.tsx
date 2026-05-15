@@ -39,9 +39,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     (async () => {
       try {
         const selected = await apiService.initialize();
-        console.log('[Auth] API initialized with base:', selected);
       } catch (e) {
-        console.warn('[Auth] API initialization failed, proceeding with defaults', e);
       }
     })();
 
@@ -49,13 +47,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const urlParams = new URLSearchParams(window.location.search);
     
     if (urlParams.get('auth') === 'success' && urlParams.get('user_id') && urlParams.get('email')) {
-      console.log('[Safari Mobile Debug] OAuth success detected in URL params');
       const userData = {
         id: urlParams.get('user_id')!,
         email: urlParams.get('email')!
       };
-      
-      console.log('[Safari Mobile Debug] Setting user from URL params:', userData);
       setUser(userData);
       localStorage.setItem('user', JSON.stringify(userData));
       
@@ -68,7 +63,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
     
     if (urlParams.get('auth') === 'error') {
-      console.error('[Safari Mobile Debug] OAuth error detected in URL params:', urlParams.get('error'));
       // Clean up URL parameters
       const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
       window.history.replaceState({}, document.title, newUrl);
@@ -90,13 +84,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     
     // Listen for Gmail OAuth callback
     const handleGmailAuthMessage = (event: MessageEvent) => {
-      console.log('[Mobile Debug] Received message event:', {
-        origin: event.origin,
-        data: event.data,
-        source: event.source,
-        currentOrigin: window.location.origin,
-        timestamp: new Date().toISOString()
-      });
       
       // Allow the active backend origin plus local development origins.
       const isAllowedOrigin =
@@ -107,34 +94,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         (event.origin.startsWith('https://') && event.origin.includes('.ngrok-'));
       
       if (!isAllowedOrigin) {
-        console.log('[Mobile Debug] Ignoring message from unauthorized origin:', event.origin);
         return;
       }
       
-      console.log('[Mobile Debug] Processing authorized message from:', event.origin);
-      console.log('[Mobile Debug] Message data:', event.data);
-      
       if (event.data.type === 'GMAIL_AUTH_SUCCESS') {
         const userData = event.data.user;
-        console.log('[Mobile Debug] Gmail auth successful, setting user:', userData);
         setUser(userData);
         localStorage.setItem('user', JSON.stringify(userData));
         setLoading(false);
       } else if (event.data.type === 'GMAIL_AUTH_ERROR') {
         const errorMsg = event.data.error;
-        console.error('[Mobile Debug] Gmail auth error:', errorMsg);
         
         // Handle specific scope errors more gracefully
         if (errorMsg && errorMsg.includes('Scope has changed')) {
-          console.log('[Mobile Debug] Scope mismatch detected - this is usually harmless, retrying...');
           // Don't show error to user, just set loading to false
           setLoading(false);
         } else {
-          console.error('[Mobile Debug] Other Gmail auth error:', errorMsg);
           setLoading(false);
         }
       } else {
-        console.log('[Mobile Debug] Unknown message type:', event.data.type);
+        // Unknown message type
       }
     };
     
@@ -158,14 +137,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.log('Current origin:', window.location.origin);
 
       if (isMobile) {
-        console.log('Mobile detected: using direct backend redirect for Gmail auth');
         const mobileAuthUrl = `${apiBaseOrigin}/api/auth/gmail?redirect=1&frontend_origin=${encodeURIComponent(window.location.origin)}`;
         window.location.href = mobileAuthUrl;
         return true;
       }
 
       const authData = await apiService.getGmailAuthUrl(window.location.origin);
-      console.log('Got auth URL:', authData.auth_url);
       
       // Try popup first, but have fallback for mobile
       const popup = window.open(
@@ -175,17 +152,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       );
       
       if (!popup || popup.closed || typeof popup.closed === 'undefined') {
-        console.warn('Popup blocked or failed to open, redirecting to full page auth...');
-        
         throw new Error('Popup blocked. Please allow popups for this site.');
       }
-      
-      console.log('Popup opened successfully, waiting for auth completion...');
       
       // Monitor popup closure
       const checkClosed = setInterval(() => {
         if (popup.closed) {
-          console.log('Popup was closed by user');
           clearInterval(checkClosed);
           setLoading(false);
         }
@@ -199,7 +171,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // The popup will send a message when auth is complete
       return true;
     } catch (error) {
-      console.error('Gmail OAuth error:', error);
       setLoading(false);
       return false;
     }
@@ -208,24 +179,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = async (email: string): Promise<boolean> => {
     try {
       setLoading(true);
-      console.log('Attempting login with email:', email);
-      
       const response = await apiService.login(email);
-      console.log('Login response:', response);
       
       if (response.success && response.user) {
         const userData = response.user;
-        console.log('Setting user data:', userData);
         setUser(userData);
         localStorage.setItem('user', JSON.stringify(userData));
-        console.log('Login successful');
         return true;
       } else {
-        console.error('Login failed - no user data in response:', response);
         return false;
       }
     } catch (error) {
-      console.error('Login error:', error);
       return false;
     } finally {
       setLoading(false);

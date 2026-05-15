@@ -267,7 +267,6 @@ function AppContent() {
 
   const loadLatestTimetable = async (force = false) => {
     if (operationInProgress && !force) {
-      console.log('Operation in progress, skipping timetable load');
       return;
     }
 
@@ -460,7 +459,6 @@ function AppContent() {
     const expandedFilteredItems = expandSocialSciencesForConfig(filteredItems);
 
     if (expandedFilteredItems.length === 0 && sourceItems.length > 0) {
-      console.warn('Semester filter returned no matches, falling back to showing all timetable items');
       return sourceItems;
     }
 
@@ -469,7 +467,6 @@ function AppContent() {
 
   const runScraper = async () => {
     if (isScraperRunning || operationInProgress) {
-      console.log('Scraper already running or operation in progress');
       return;
     }
 
@@ -517,7 +514,6 @@ function AppContent() {
 
   const runScraperWithSemesters = async (_semestersList: string[]) => {
     if (isScraperRunning || operationInProgress) {
-      console.log('Scraper already running or operation in progress');
       return;
     }
 
@@ -559,7 +555,6 @@ function AppContent() {
 
   const handleSaveSemesters = async (newSemesters: string[]) => {
     if (isSemesterUpdateRunning || operationInProgress) {
-      console.log('Semester update already running or operation in progress');
       return;
     }
 

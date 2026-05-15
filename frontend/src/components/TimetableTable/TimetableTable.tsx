@@ -11,9 +11,6 @@ interface TimetableTableProps {
   items: TimetableItem[];
 }
 
-let loggedTimes = new Set<string>();
-let loggedSemesters = new Set<string>();
-
 const parseTimeToMinutes = (timeStr: string): number => {
   if (!timeStr || timeStr === '-' || timeStr === 'null') return 0;
 
@@ -31,15 +28,6 @@ const parseTimeToMinutes = (timeStr: string): number => {
   }
 
   const totalMinutes = hours * 60 + minutes;
-
-  if (!loggedTimes.has(timeStr)) {
-    loggedTimes.add(timeStr);
-    console.log(
-      `Time parsing: "${timeStr}" -> ${hours}:${minutes
-        .toString()
-        .padStart(2, '0')} (${totalMinutes} minutes)`
-    );
-  }
 
   return totalMinutes;
 };
@@ -137,8 +125,6 @@ const renderText = (text: string): React.ReactNode => {
 };
 
 const groupAndSortData = (items: TimetableItem[]) => {
-  loggedTimes.clear();
-  loggedSemesters.clear();
 
   const grouped = items.reduce((acc, item) => {
     const semester = getSemesterLabel(item) || 'Unassigned';

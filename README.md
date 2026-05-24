@@ -155,10 +155,12 @@ The frontend runs on `http://localhost:3000` by default.
 | `SUPABASE_SERVICE_KEY` | Supabase service key used by the backend |
 | `CLIENT_SECRET_JSON` | Google OAuth client secret JSON for hosted environments |
 | `AUTOMATION_SECRET` | Secret token used to protect the daily email automation endpoint |
-| `SMTP_HOST` | Outlook SMTP host, usually `smtp-mail.outlook.com` |
-| `SMTP_PORT` | Outlook SMTP port, usually `587` |
-| `SMTP_USERNAME` | Sender email address for automation |
-| `SMTP_PASSWORD` | Sender email password or app password |
+| `RESEND_API_KEY` | Recommended email API key for Render deployments |
+| `EMAIL_FROM` | Verified sender address for API-based email |
+| `SMTP_HOST` | SMTP host for non-Render/paid deployments |
+| `SMTP_PORT` | SMTP port for non-Render/paid deployments |
+| `SMTP_USERNAME` | SMTP sender email address |
+| `SMTP_PASSWORD` | SMTP password or app password |
 | `SMTP_FROM_NAME` | Sender display name, for example `Inbox2Table` |
 | `TZ` | Local timezone, defaults to `Asia/Karachi` |
 | `GMAIL_QUERY_BASE` | Base Gmail query for timetable emails |
@@ -249,7 +251,16 @@ Inbox2Table can send a formatted timetable email every day. The user enters a pe
 3. Formats the timetable as an HTML email.
 4. Sends it to the saved personal email address.
 
-Required backend environment variables:
+Recommended backend environment variables on Render:
+
+```text
+RESEND_API_KEY=your-resend-api-key
+EMAIL_FROM=Inbox2Table <your-verified-sender@example.com>
+SMTP_FROM_NAME=Inbox2Table
+AUTOMATION_SECRET=choose-a-long-random-secret
+```
+
+SMTP can be used on hosts that allow outbound SMTP traffic:
 
 ```text
 SMTP_HOST=smtp-mail.outlook.com
@@ -259,6 +270,8 @@ SMTP_PASSWORD=your-outlook-password-or-app-password
 SMTP_FROM_NAME=Inbox2Table
 AUTOMATION_SECRET=choose-a-long-random-secret
 ```
+
+Render free services block outbound traffic to SMTP ports `25`, `465`, and `587`, so API-based email over HTTPS is the reliable option there.
 
 For Render, create a separate Cron Job from the same repo:
 

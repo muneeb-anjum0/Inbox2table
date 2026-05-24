@@ -1,4 +1,5 @@
 import os
+import requests
 import smtplib
 from email.message import EmailMessage
 from typing import Dict, List
@@ -10,6 +11,14 @@ def _smtp_settings() -> Dict[str, object]:
         'port': int(os.environ.get('SMTP_PORT', '587')),
         'username': os.environ.get('SMTP_USERNAME', ''),
         'password': os.environ.get('SMTP_PASSWORD', ''),
+        'from_name': os.environ.get('SMTP_FROM_NAME', 'Inbox2Table'),
+    }
+
+
+def _resend_settings() -> Dict[str, str]:
+    return {
+        'api_key': os.environ.get('RESEND_API_KEY', ''),
+        'from_email': os.environ.get('EMAIL_FROM') or os.environ.get('SMTP_USERNAME', ''),
         'from_name': os.environ.get('SMTP_FROM_NAME', 'Inbox2Table'),
     }
 
@@ -164,6 +173,10 @@ def build_timetable_email_html(timetable: Dict, university_email: str) -> str:
 
 
 def send_timetable_email(to_email: str, university_email: str, timetable: Dict) -> None:
+    if os.environ.get('RESEND_API_KEY'):
+        send_timetable_email_with_resend(to_email, university_email, timetable)
+        return
+
     smtp = _smtp_settings()
     username = str(smtp['username'])
     password = str(smtp['password'])
@@ -186,3 +199,37 @@ def send_timetable_email(to_email: str, university_email: str, timetable: Dict) 
         server.ehlo()
         server.login(username, password)
         server.send_message(msg)
+
+
+def send_timetable_email_with_resend(to_email: str, university_email: str, timetable: Dict) -> None:
+    resend = _resend_settings()
+    api_key = resend['api_key']
+    from_email = resend['from_email']
+
+    if not api_key:
+        raise RuntimeError('RESEND_API_KEY must be configured')
+
+    if not from_email:
+        raise RuntimeError('EMAIL_FROM must be configured for Resend')
+
+    subject = f"Inbox2Table: timetable for {timetable.get('for_day', 'today')}"
+    html = build_timetable_email_html(timetable, university_email)
+
+    response = requests.post(
+        'https://api.resend.com/emails',
+        headers={
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json',
+        },
+        json={
+            'from': f"{resend['from_name']} <{from_email}>",
+            'to': [to_email],
+            'subject': subject,
+            'html': html,
+            'text': _build_plain_text(timetable),
+        },
+        timeout=30,
+    )
+
+    if response.status_code >= 400:
+        raise RuntimeError(f"Resend API error {response.status_code}: {response.text}")

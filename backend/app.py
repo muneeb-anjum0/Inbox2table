@@ -1244,8 +1244,24 @@ def send_daily_timetables_automation():
         from utils.daily_email import send_daily_timetable_emails
 
         result = send_daily_timetable_emails()
+        compact_results = []
+        for item in result.get('results', []) or []:
+            send_result = item.get('send_result') or {}
+            compact_results.append({
+                'user_email': item.get('user_email'),
+                'personal_email': item.get('personal_email'),
+                'success': item.get('success'),
+                'items': item.get('items'),
+                'error': item.get('error'),
+                'provider': send_result.get('provider'),
+                'subject': send_result.get('subject'),
+            })
+
         return jsonify({
-            **result,
+            'success': result.get('success'),
+            'processed': result.get('processed', 0),
+            'failed': result.get('failed', 0),
+            'results': compact_results,
             'timestamp': datetime.now().isoformat()
         }), 200 if result.get('success') else 207
 

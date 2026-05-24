@@ -522,6 +522,68 @@ html[data-theme='dark'] .action-panel::before {
   line-height: 1.35;
 }
 
+.daily-email__toggle {
+  margin-top: 0.55rem;
+  min-height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid var(--theme-border-soft);
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem 0.25rem 0.3rem;
+  background: color-mix(in srgb, var(--theme-surface-elevated) 96%, transparent);
+  color: var(--theme-text-primary);
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    transform 150ms ease,
+    opacity 150ms ease,
+    border-color 150ms ease;
+}
+
+.daily-email__toggle:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--theme-accent-strong) 32%, var(--theme-border-soft));
+}
+
+.daily-email__toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.daily-email__toggle-track {
+  position: relative;
+  width: 2.2rem;
+  height: 1.25rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-text-muted) 30%, transparent);
+  transition: background 150ms ease;
+}
+
+.daily-email__toggle-track[data-active='true'] {
+  background: #16a34a;
+}
+
+.daily-email__toggle-thumb {
+  position: absolute;
+  top: 0.18rem;
+  left: 0.18rem;
+  width: 0.89rem;
+  height: 0.89rem;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.2);
+  transition: transform 150ms ease;
+}
+
+.daily-email__toggle-track[data-active='true'] .daily-email__toggle-thumb {
+  transform: translateX(0.95rem);
+}
+
 .daily-email__controls {
   min-width: 0;
   display: grid;
@@ -1892,6 +1954,13 @@ html[data-theme='dark'] .status-indicator__badge-surface {
   .daily-email--mobile .daily-email__label {
     font-size: 10.5px;
     color: var(--theme-text-secondary);
+  }
+
+  .daily-email--mobile .daily-email__toggle {
+    width: max-content;
+    min-height: 32px;
+    margin-top: 0;
+    font-size: 10px;
   }
 
   .daily-email--mobile .daily-email__input {

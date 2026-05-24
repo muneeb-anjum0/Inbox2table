@@ -142,6 +142,7 @@ function AppContent() {
   const [isBackendWaking, setIsBackendWaking] = useState(false);
   const [personalEmail, setPersonalEmail] = useState('');
   const [isPersonalEmailSaving, setIsPersonalEmailSaving] = useState(false);
+  const [isDailyEmailToggleSaving, setIsDailyEmailToggleSaving] = useState(false);
   const [isTestEmailSending, setIsTestEmailSending] = useState(false);
 
   const clearLogoutConfirmTimer = () => {
@@ -246,6 +247,7 @@ function AppContent() {
   }, [configuredSemesters, timetableData]);
 
   const noSemestersConfigured = detectedSemesters.length === 0;
+  const dailyEmailEnabled = Boolean(config?.daily_email_enabled);
 
   const loadConfig = async (): Promise<ConfigData | null> => {
     try {
@@ -594,17 +596,20 @@ function AppContent() {
       const response = await apiService.updatePersonalEmail(trimmedEmail);
 
       if (response.success) {
+        const savedEnabled = response.data?.daily_email_enabled ?? false;
         setPersonalEmail(trimmedEmail);
         setConfig((currentConfig) => currentConfig ? {
           ...currentConfig,
           personal_email: trimmedEmail,
-          daily_email_enabled: Boolean(trimmedEmail),
+          daily_email_enabled: savedEnabled,
         } : currentConfig);
         setStatus('success');
         setMessage(
-          trimmedEmail
+          !trimmedEmail
+            ? 'Daily timetable email disabled.'
+            : savedEnabled
             ? 'Daily timetable email saved. Automation will send it at 8:00 PM.'
-            : 'Daily timetable email disabled.'
+            : 'Recipient saved. Turn on daily email when you want automatic delivery.'
         );
       } else {
         setStatus('error');
@@ -616,6 +621,49 @@ function AppContent() {
       setMessage('Failed to save daily email recipient');
     } finally {
       setIsPersonalEmailSaving(false);
+    }
+  };
+
+  const handleToggleDailyEmail = async () => {
+    if (isDailyEmailToggleSaving || operationInProgress) {
+      return;
+    }
+
+    const nextEnabled = !dailyEmailEnabled;
+    const savedEmail = config?.personal_email?.trim() || '';
+
+    if (nextEnabled && !savedEmail) {
+      setStatus('error');
+      setMessage('Save a personal email before enabling daily delivery.');
+      return;
+    }
+
+    try {
+      setIsDailyEmailToggleSaving(true);
+      setStatus('loading');
+      setMessage(nextEnabled ? 'Enabling daily email delivery...' : 'Disabling daily email delivery...');
+
+      const response = await apiService.updateDailyEmailEnabled(nextEnabled);
+
+      if (response.success) {
+        const enabled = response.data?.daily_email_enabled ?? nextEnabled;
+        setConfig((currentConfig) => currentConfig ? {
+          ...currentConfig,
+          daily_email_enabled: enabled,
+          personal_email: response.data?.personal_email ?? currentConfig.personal_email,
+        } : currentConfig);
+        setStatus('success');
+        setMessage(enabled ? 'Daily email enabled. It will run at 8:00 PM.' : 'Daily email disabled.');
+      } else {
+        setStatus('error');
+        setMessage(response.error || 'Failed to update daily email delivery');
+      }
+    } catch (error) {
+      console.error('Error toggling daily email:', error);
+      setStatus('error');
+      setMessage('Failed to update daily email delivery');
+    } finally {
+      setIsDailyEmailToggleSaving(false);
     }
   };
 
@@ -714,7 +762,7 @@ function AppContent() {
           gmail_query: currentConfig?.gmail_query || '',
           semester_filter: newSemesters,
           personal_email: currentConfig?.personal_email || personalEmail.trim(),
-          daily_email_enabled: Boolean(currentConfig?.personal_email || personalEmail.trim()),
+          daily_email_enabled: Boolean(currentConfig?.daily_email_enabled),
           schedule_time: currentConfig?.schedule_time || '00:00',
           timezone: currentConfig?.timezone || 'Asia/Karachi',
           max_results: currentConfig?.max_results || 50,
@@ -888,6 +936,21 @@ function AppContent() {
                     <span>Daily email</span>
                   </div>
 
+                  <button
+                    type="button"
+                    onClick={handleToggleDailyEmail}
+                    disabled={isDailyEmailToggleSaving || isPersonalEmailSaving || operationInProgress}
+                    className="daily-email__toggle"
+                    aria-pressed={dailyEmailEnabled}
+                    title={dailyEmailEnabled ? 'Disable daily email delivery' : 'Enable daily email delivery'}
+                    aria-label={dailyEmailEnabled ? 'Disable daily email delivery' : 'Enable daily email delivery'}
+                  >
+                    <span className="daily-email__toggle-track" data-active={dailyEmailEnabled ? 'true' : 'false'}>
+                      <span className="daily-email__toggle-thumb" />
+                    </span>
+                    <span>{dailyEmailEnabled ? 'On' : 'Off'}</span>
+                  </button>
+
                   <div className="daily-email__controls">
                     <input
                       type="email"
@@ -1002,6 +1065,21 @@ function AppContent() {
                     <span>Daily email</span>
                   </div>
                   <p>Send the formatted timetable to your personal inbox every day at 8:00 PM.</p>
+
+                  <button
+                    type="button"
+                    onClick={handleToggleDailyEmail}
+                    disabled={isDailyEmailToggleSaving || isPersonalEmailSaving || operationInProgress}
+                    className="daily-email__toggle"
+                    aria-pressed={dailyEmailEnabled}
+                    title={dailyEmailEnabled ? 'Disable daily email delivery' : 'Enable daily email delivery'}
+                    aria-label={dailyEmailEnabled ? 'Disable daily email delivery' : 'Enable daily email delivery'}
+                  >
+                    <span className="daily-email__toggle-track" data-active={dailyEmailEnabled ? 'true' : 'false'}>
+                      <span className="daily-email__toggle-thumb" />
+                    </span>
+                    <span>{isDailyEmailToggleSaving ? 'Saving' : dailyEmailEnabled ? 'Enabled' : 'Disabled'}</span>
+                  </button>
                 </div>
 
                 <div className="daily-email__controls">

@@ -1009,8 +1009,9 @@ def update_personal_email():
             }), 400
 
         current_settings = supabase_manager.get_user_settings(user['id'])
+        was_enabled = current_settings.get('daily_email_enabled', bool(current_settings.get('personal_email')))
         current_settings['personal_email'] = personal_email
-        current_settings['daily_email_enabled'] = bool(personal_email)
+        current_settings['daily_email_enabled'] = bool(personal_email) and bool(was_enabled)
 
         success = supabase_manager.save_user_settings(user['id'], current_settings)
 
@@ -1024,12 +1025,59 @@ def update_personal_email():
             'success': True,
             'message': 'Daily email recipient saved' if personal_email else 'Daily email disabled',
             'personal_email': personal_email,
-            'daily_email_enabled': bool(personal_email),
+            'daily_email_enabled': current_settings['daily_email_enabled'],
             'timestamp': datetime.now().isoformat()
         })
 
     except Exception as e:
         logger.error(f"Error updating personal email: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/config/daily-email-enabled', methods=['POST', 'OPTIONS'])
+def update_daily_email_enabled():
+    """Enable or disable scheduled daily timetable delivery for the current user."""
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    try:
+        user, error_response, status_code = get_user_from_request()
+        if error_response:
+            return error_response, status_code
+
+        data = request.get_json() or {}
+        enabled = bool(data.get('daily_email_enabled'))
+
+        current_settings = supabase_manager.get_user_settings(user['id'])
+        personal_email = (current_settings.get('personal_email') or '').strip()
+
+        if enabled and not personal_email:
+            return jsonify({
+                'success': False,
+                'error': 'Save a personal email before enabling daily delivery'
+            }), 400
+
+        current_settings['daily_email_enabled'] = enabled
+        success = supabase_manager.save_user_settings(user['id'], current_settings)
+
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to update daily email setting'
+            }), 500
+
+        return jsonify({
+            'success': True,
+            'message': 'Daily email enabled' if enabled else 'Daily email disabled',
+            'personal_email': personal_email,
+            'daily_email_enabled': enabled,
+            'timestamp': datetime.now().isoformat()
+        })
+
+    except Exception as e:
+        logger.error(f"Error updating daily email setting: {e}", exc_info=True)
         return jsonify({
             'success': False,
             'error': str(e)

@@ -231,10 +231,34 @@ export const apiService = {
       throw new Error('Please wait before updating your email again');
     }
 
-    const response: AxiosResponse<ApiResponse<{ personal_email: string; daily_email_enabled: boolean }>> = await api.post('/api/config/personal-email', {
+    const response: AxiosResponse<any> = await api.post('/api/config/personal-email', {
       personal_email: personalEmail,
     });
-    return response.data;
+    return {
+      ...response.data,
+      data: {
+        personal_email: response.data.personal_email,
+        daily_email_enabled: response.data.daily_email_enabled,
+      },
+    };
+  },
+
+  // Enable or disable scheduled daily timetable delivery
+  updateDailyEmailEnabled: async (enabled: boolean): Promise<ApiResponse<{ personal_email: string; daily_email_enabled: boolean }>> => {
+    if (rateLimiter.shouldBlock('/api/config/daily-email-enabled')) {
+      throw new Error('Please wait before updating daily email delivery again');
+    }
+
+    const response: AxiosResponse<any> = await api.post('/api/config/daily-email-enabled', {
+      daily_email_enabled: enabled,
+    });
+    return {
+      ...response.data,
+      data: {
+        personal_email: response.data.personal_email,
+        daily_email_enabled: response.data.daily_email_enabled,
+      },
+    };
   },
 
   // Send a test daily timetable email for the logged-in user

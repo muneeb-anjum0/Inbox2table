@@ -293,10 +293,10 @@ AUTOMATION_SECRET=choose-a-long-random-secret
 
 Render free services block outbound traffic to SMTP ports `25`, `465`, and `587`, so API-based email over HTTPS is the reliable option there.
 
-For Render, create a separate Cron Job from the same repo:
+For Render, create a separate Cron Job from the same repo. This command wakes the hosted backend through its protected automation endpoint, so the web service starts even after inactivity and then sends the enabled daily emails:
 
 ```text
-Command: cd backend && python scripts/send_daily_timetables.py
+Command: cd backend && python scripts/trigger_daily_timetables.py
 Schedule: 0 15 * * *
 ```
 

@@ -9,7 +9,7 @@ import SemesterManager from './components/SemesterManager/SemesterManager';
 import LoginScreen from './components/LoginScreen/LoginScreen';
 import ThemeToggle from './components/ThemeToggle/ThemeToggle';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { ChevronDown, Mail, Save } from 'lucide-react';
+import { ChevronDown, Mail, Send, Save } from 'lucide-react';
 import { normalizeSemesterLabel, normalizeSemesterKey } from './utils/semesterNormalization';
 import { TimetableItem } from './types/api';
 
@@ -142,6 +142,7 @@ function AppContent() {
   const [isBackendWaking, setIsBackendWaking] = useState(false);
   const [personalEmail, setPersonalEmail] = useState('');
   const [isPersonalEmailSaving, setIsPersonalEmailSaving] = useState(false);
+  const [isTestEmailSending, setIsTestEmailSending] = useState(false);
 
   const clearLogoutConfirmTimer = () => {
     if (logoutConfirmTimer.current !== null) {
@@ -618,6 +619,50 @@ function AppContent() {
     }
   };
 
+  const handleSendTestEmail = async () => {
+    if (isTestEmailSending || operationInProgress) {
+      return;
+    }
+
+    const trimmedEmail = personalEmail.trim();
+    const savedEmail = config?.personal_email?.trim() || '';
+
+    if (!trimmedEmail) {
+      setStatus('error');
+      setMessage('Save a personal email before sending a test.');
+      return;
+    }
+
+    if (trimmedEmail !== savedEmail) {
+      setStatus('warning');
+      setMessage('Save the personal email first, then send the test email.');
+      return;
+    }
+
+    try {
+      setIsTestEmailSending(true);
+      setStatus('loading');
+      setMessage('Running parser and sending test email...');
+
+      const response = await apiService.sendTestTimetableEmail();
+
+      if (response.success) {
+        setStatus('success');
+        setMessage(`Test email sent to ${trimmedEmail}.`);
+        await checkStatus();
+      } else {
+        setStatus('error');
+        setMessage(response.error || 'Failed to send test email');
+      }
+    } catch (error) {
+      console.error('Error sending test email:', error);
+      setStatus('error');
+      setMessage('Failed to send test email');
+    } finally {
+      setIsTestEmailSending(false);
+    }
+  };
+
   const handleSaveSemesters = async (newSemesters: string[]) => {
     if (isSemesterUpdateRunning || operationInProgress) {
       return;
@@ -824,12 +869,23 @@ function AppContent() {
                     <button
                       type="button"
                       onClick={handleSavePersonalEmail}
-                      disabled={isPersonalEmailSaving || operationInProgress}
+                      disabled={isPersonalEmailSaving || isTestEmailSending || operationInProgress}
                       className="daily-email__save"
                       title="Save daily email recipient"
                       aria-label="Save daily email recipient"
                     >
                       <Save className="daily-email__save-icon" aria-hidden="true" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSendTestEmail}
+                      disabled={isPersonalEmailSaving || isTestEmailSending || operationInProgress}
+                      className="daily-email__save daily-email__save--test"
+                      title="Send test timetable email"
+                      aria-label="Send test timetable email"
+                    >
+                      <Send className="daily-email__save-icon" aria-hidden="true" />
                     </button>
                   </div>
                 </div>
@@ -929,13 +985,25 @@ function AppContent() {
                   <button
                     type="button"
                     onClick={handleSavePersonalEmail}
-                    disabled={isPersonalEmailSaving || operationInProgress}
+                    disabled={isPersonalEmailSaving || isTestEmailSending || operationInProgress}
                     className="daily-email__save"
                     title="Save daily email recipient"
                     aria-label="Save daily email recipient"
                   >
                     <Save className="daily-email__save-icon" aria-hidden="true" />
                     <span>{isPersonalEmailSaving ? 'Saving' : 'Save'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSendTestEmail}
+                    disabled={isPersonalEmailSaving || isTestEmailSending || operationInProgress}
+                    className="daily-email__save daily-email__save--test"
+                    title="Send test timetable email"
+                    aria-label="Send test timetable email"
+                  >
+                    <Send className="daily-email__save-icon" aria-hidden="true" />
+                    <span>{isTestEmailSending ? 'Sending' : 'Test'}</span>
                   </button>
                 </div>
               </div>

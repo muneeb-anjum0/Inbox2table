@@ -842,6 +842,41 @@ def send_daily_timetables_automation():
             'timestamp': datetime.now().isoformat()
         }), 500
 
+@app.route('/api/automation/send-test-timetable-email', methods=['POST', 'OPTIONS'])
+def send_test_timetable_email():
+    """Run and send the daily timetable email for the authenticated user only."""
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    try:
+        user, error_response, status_code = get_user_from_request()
+        if error_response:
+            return error_response, status_code
+
+        user_settings = supabase_manager.get_user_settings(user['id'])
+
+        if not (user_settings.get('personal_email') or '').strip():
+            return jsonify({
+                'success': False,
+                'error': 'Save a personal email before sending a test.'
+            }), 400
+
+        from utils.daily_email import send_daily_timetable_email_for_user
+
+        result = send_daily_timetable_email_for_user(user, user_settings)
+        return jsonify({
+            **result,
+            'timestamp': datetime.now().isoformat()
+        }), 200 if result.get('success') else 400
+
+    except Exception as e:
+        logger.error(f"Test timetable email failed: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
+
 @app.route('/api/timetable', methods=['GET'])
 def get_latest_timetable():
     """Get the latest saved timetable data for a user"""

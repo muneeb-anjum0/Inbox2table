@@ -525,7 +525,7 @@ html[data-theme='dark'] .action-panel::before {
 .daily-email__controls {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 0.5rem;
 }
@@ -585,6 +585,26 @@ html[data-theme='dark'] .action-panel::before {
   background: #1a1a1a;
 }
 
+.daily-email__save--test {
+  border-color: var(--theme-border-soft);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-surface-elevated) 96%, transparent),
+      color-mix(in srgb, var(--theme-surface-muted) 86%, transparent)
+    );
+  color: var(--theme-text-primary);
+}
+
+.daily-email__save--test:hover:not(:disabled) {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-surface-elevated) 100%, transparent),
+      color-mix(in srgb, var(--theme-surface-muted) 90%, transparent)
+    );
+}
+
 .daily-email__save:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -603,6 +623,16 @@ html[data-theme='dark'] .daily-email__save {
 
 html[data-theme='dark'] .daily-email__save:hover:not(:disabled) {
   background: #f0f0f0;
+}
+
+html[data-theme='dark'] .daily-email__save--test {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--theme-text-primary);
+}
+
+html[data-theme='dark'] .daily-email__save--test:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .btn-pill,

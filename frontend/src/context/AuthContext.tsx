@@ -112,8 +112,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         } else {
           setLoading(false);
         }
-      } else {
-        // Unknown message type
       }
     };
     
@@ -128,13 +126,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const loginWithGmail = async (): Promise<boolean> => {
     try {
       setLoading(true);
-      console.log('Starting Gmail OAuth flow...');
-      
-      // Detect mobile device
       const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      console.log('Is mobile device:', isMobile);
-      console.log('User agent:', navigator.userAgent);
-      console.log('Current origin:', window.location.origin);
 
       if (isMobile) {
         const mobileAuthUrl = `${apiBaseOrigin}/api/auth/gmail?redirect=1&frontend_origin=${encodeURIComponent(window.location.origin)}`;
@@ -143,8 +135,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       const authData = await apiService.getGmailAuthUrl(window.location.origin);
-      
-      // Try popup first, but have fallback for mobile
       const popup = window.open(
         authData.auth_url,
         'gmail-auth',
@@ -155,7 +145,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         throw new Error('Popup blocked. Please allow popups for this site.');
       }
       
-      // Monitor popup closure
       const checkClosed = setInterval(() => {
         if (popup.closed) {
           clearInterval(checkClosed);
@@ -163,12 +152,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       }, 1000);
       
-      // Clean up interval after 5 minutes
       setTimeout(() => {
         clearInterval(checkClosed);
       }, 300000);
-      
-      // The popup will send a message when auth is complete
+
       return true;
     } catch (error) {
       setLoading(false);

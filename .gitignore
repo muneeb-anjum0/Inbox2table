@@ -2,17 +2,30 @@
 
 # dependencies
 /node_modules
+/frontend/node_modules
 /.pnp
 .pnp.js
 
 # testing
 /coverage
+/.pytest_cache
+**/.pytest_cache
+**/__pycache__
+*.py[cod]
 
 # production
 /build
+/frontend/build
 
 # misc
 .DS_Store
+.env
+.env.*
+!.env.example
+!backend/.env.example
+backend/credentials/*.json
+token.json
+data/cache
 .env.local
 .env.development.local
 .env.test.local

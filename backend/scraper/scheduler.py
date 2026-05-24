@@ -1,7 +1,3 @@
-"""
-APScheduler job that runs nightly at configured local time.
-Now supports multi-user operation with Supabase storage.
-"""
 import json
 import logging
 import os
@@ -14,8 +10,6 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
 from dateutil import tz
 
 from .gmail_client import get_credentials, build_service, list_messages, get_message_html
@@ -90,11 +84,11 @@ def _save_json(doc: Dict, folder: str = "data/cache") -> str:
 
 def run_once(user_email: str = "me", show_table: bool = False, user_id: Optional[str] = None, user_settings: Optional[Dict] = None) -> Dict:
     """
-    Run scraper once for a specific user
+    Run the scraper once for a specific user.
     
     Args:
         user_email: Gmail user email (for Gmail API)
-        show_table: Whether to display results in table format
+        show_table: Kept for legacy callers; the web app uses JSON responses.
         user_id: Supabase user ID for storing results
         user_settings: User-specific settings (overrides global settings)
     """
@@ -208,55 +202,8 @@ def run_once(user_email: str = "me", show_table: bool = False, user_id: Optional
         summary = doc.get("summary", {})
         LOGGER.info(f"Successfully parsed {summary['total_items']} items for date {target_date.date()}")
         
-        # Display table if requested
-        if show_table:
-            try:
-                from utils.table_formatter import format_schedule_data
-                print()  # Add some spacing
-                # Pass the doc data directly since we're not saving to file anymore
-                format_schedule_data(doc)
-            except ImportError as imp_err:
-                LOGGER.warning(f"Could not import table formatter: {imp_err}")
-            except Exception as table_err:
-                LOGGER.warning(f"Error displaying table: {table_err}")
-        
         return {"success": True, "data": doc, "message": f"Successfully found {len(items)} items"}
     
     except Exception as e:
         LOGGER.error(f"Scraper error: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
-
-def start_scheduler(user_id: str, user_settings: dict = None) -> BackgroundScheduler:
-    """Start the scheduler for a specific user with their settings"""
-    from .config import settings
-    
-    # Use user-specific settings if provided, otherwise fall back to defaults
-    effective_settings = user_settings if user_settings else settings
-    
-    local_tz = tz.gettz(effective_settings.get('tz', settings.tz))
-    scheduler = BackgroundScheduler(timezone=local_tz)
-
-    trigger = CronTrigger(
-        hour=effective_settings.get('check_hour_local', settings.check_hour_local),
-        minute=effective_settings.get('check_minute_local', settings.check_minute_local),
-        timezone=local_tz,
-    )
-
-    scheduler.add_job(
-        func=run_once,
-        trigger=trigger,
-        id=f"nightly_scrape_{user_id}",
-        max_instances=1,
-        replace_existing=True,
-        kwargs={"user_id": user_id, "user_settings": user_settings},
-    )
-
-    scheduler.start()
-    LOGGER.info(
-        "Scheduler started for user %s. Will run nightly at %02d:%02d (%s).",
-        user_id,
-        effective_settings.get('check_hour_local', settings.check_hour_local),
-        effective_settings.get('check_minute_local', settings.check_minute_local),
-        effective_settings.get('tz', settings.tz),
-    )
-    return scheduler

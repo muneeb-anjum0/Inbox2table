@@ -1,127 +1,150 @@
 # Inbox2Table
 
-Inbox2Table turns Gmail timetable emails into a clean, structured class schedule dashboard. It was built for the real-world messiness of university schedule emails: inconsistent HTML tables, wrapped lines, combined semester labels, cancelled classes, room/faculty mix-ups, and multiple users with different semester filters.
+Inbox2Table is a full-stack timetable automation app for students. It signs in with a student's Gmail account, finds the latest university timetable email, parses the messy email content into structured class data, and displays it in a responsive dashboard. It can also send the formatted timetable to a personal email every day at 8:00 PM.
 
-The project includes a Flask API, Gmail OAuth, Supabase persistence, a custom timetable parser, and a responsive React/TypeScript frontend.
+## What It Does
 
-## Why I Built This
+- Authenticates students with Google OAuth and reads timetable emails through the Gmail API.
+- Parses inconsistent timetable email formats, including HTML tables, flattened rows, slash-separated semester labels, cancelled classes, and malformed course/faculty/room fields.
+- Stores each user's tokens, semester filters, settings, and cached timetable in Supabase.
+- Shows a polished React dashboard with summary stats, desktop table view, mobile class cards, semester management, theme switching, and backend wake-up status.
+- Sends daily timetable emails through a separate official Gmail sender account.
+- Uses cron-job.org to wake the Render backend before 8 PM and trigger the daily email automation.
 
-University timetable emails are useful, but hard to consume. They arrive as dense Gmail messages, often with long tables and inconsistent formatting. I wanted a workflow where a student can sign in with Gmail, select the semesters they care about, and see the latest schedule in a dashboard instead of manually scanning emails.
+## Automation
 
-Inbox2Table automates that flow end to end:
+The production automation is a cron-triggered backend workflow:
 
-1. Authenticate with Gmail.
-2. Search for the latest timetable email for the target day.
-3. Parse the timetable into structured data.
-4. Normalize semesters, courses, faculty, rooms, time, campus, and cancelled classes.
-5. Cache the result per user in Supabase.
-6. Display it in a responsive dashboard.
+```text
+7:55 PM Asia/Karachi
+cron-job.org -> GET /api/health
+```
 
-## What I Had To Build
+This wakes the free Render backend before the real job runs.
 
-- Google OAuth flow for both popup-based desktop login and redirect-based mobile login.
-- Gmail API integration to search timetable emails and read HTML/plain-text message bodies.
-- A custom parser that handles table-based emails, flattened text rows, line breaks inside cells, slash-separated semester labels, missing meridiems, cancelled classes, and malformed course codes.
-- Multi-user backend state using Supabase tables for users, OAuth tokens, user settings, and timetable cache.
-- Per-user semester management so each student can filter the same source emails differently.
-- A Flask REST API for auth, config, scraping, cache, status, and health checks.
-- React/TypeScript frontend with authentication context, API service, status handling, summary cards, mobile cards, desktop tables, light/dark themes, and semester management.
-- Production deployment support for a hosted backend on Render and a static frontend on Vercel or similar platforms.
-- A Render cold-start loading state so users understand when the backend is waking up after inactivity.
-- Unit tests for the parser and backend behavior, especially around edge cases found in actual timetable emails.
+```text
+8:00 PM Asia/Karachi
+cron-job.org -> POST /api/automation/send-daily-timetables
+```
 
-## Core Features
+The backend immediately returns `202 Accepted`, then runs the daily job in the background:
 
-- Gmail OAuth sign-in with secure token storage.
-- One-click timetable refresh from the dashboard.
-- Automatic Gmail query generation for today's or tomorrow's timetable based on local time.
-- Semester filters that can be added, removed, saved, and reused per user.
-- Normalized schedule display grouped by semester.
-- Summary stats for total classes, unique courses, faculty members, and semester breakdown.
-- Responsive UI: card-based mobile view and dense desktop table view.
-- Light and dark theme support.
-- Cached timetable loading so users can still see the latest saved data.
-- Backend wake-up status for Render-hosted services.
+1. Finds users with Daily Email enabled.
+2. Scrapes each user's timetable using their student Gmail token.
+3. Formats the parsed timetable as an HTML email.
+4. Sends it to the saved personal email via the official Gmail sender.
+
+The dashboard includes a manual **Test** button and an enable/disable toggle for Daily Email.
 
 ## Tech Stack
 
-| Area | Tools |
+| Layer | Tools |
 | --- | --- |
-| Frontend | React 19, TypeScript, Tailwind CSS, Lucide React, Axios |
+| Frontend | React, TypeScript, Axios, Lucide React |
 | Backend | Flask, Flask-CORS, Gunicorn |
-| Auth and APIs | Google OAuth 2.0, Gmail API |
+| Auth and Email | Google OAuth 2.0, Gmail API |
 | Storage | Supabase |
-| Parsing | BeautifulSoup, regex-based normalization, custom parser heuristics |
-| Scheduling | APScheduler, python-dateutil |
-| Testing | Pytest, React Testing Library |
-| Deployment | Render-ready Flask backend, static React build for Vercel or similar hosts |
+| Parsing | BeautifulSoup, lxml, custom parser heuristics |
+| Automation | cron-job.org, protected Flask automation endpoint |
+| Testing | Pytest, React build checks |
+| Deployment | Render backend, Vercel/static frontend |
 
 ## Architecture
 
 ```text
-Gmail
+Student Gmail
   -> Gmail API
-  -> Flask backend
-  -> custom parser and semester normalizer
+  -> Flask parser API
   -> Supabase users/tokens/settings/cache
   -> React dashboard
+
+cron-job.org
+  -> Render backend wake-up
+  -> protected daily automation endpoint
+  -> official Gmail sender
+  -> user's personal inbox
 ```
-
-The backend owns authentication, Gmail access, parsing, user-specific configuration, and cache persistence. The frontend owns the student workflow: sign in, configure semesters, run the parser, view status, and browse the resulting schedule.
-
-## Backend API
-
-| Endpoint | Method | Purpose |
-| --- | --- | --- |
-| `/api/health` | GET | Health check for deployment and startup checks |
-| `/api/auth/gmail` | GET | Starts Gmail OAuth flow |
-| `/api/auth/gmail/callback` | GET | Handles Google OAuth callback |
-| `/api/auth/login` | POST | Email-based fallback login |
-| `/api/config` | GET | Loads user-specific settings |
-| `/api/config/semesters` | POST | Saves semester filters |
-| `/api/scrape` | POST | Runs the Gmail scraper/parser for the current user |
-| `/api/timetable` | GET | Returns the latest cached timetable |
-| `/api/status` | GET | Returns cache/status metadata |
-| `/api/cache/clear` | POST | Clears the current user's timetable cache |
-| `/api/oauth-config` | GET | Debug endpoint for OAuth redirect configuration |
 
 ## Project Structure
 
 ```text
 Inbox2table/
   backend/
-    app.py                     Flask API and OAuth routes
-    requirements.txt           Python dependencies
-    Dockerfile                 Backend container definition
-    database/
-      supabase_client.py       Supabase user, token, settings, and cache operations
-    scraper/
-      config.py                Environment-driven scraper settings
-      gmail_client.py          Gmail API helpers
-      scheduler.py             One-shot and scheduled scraping
-      timetable_parser.py      Custom timetable parser and normalization logic
-    tests/                     Pytest coverage for parser/backend behavior
+    app.py                         Flask API, OAuth, config, automation routes
+    requirements.txt               Python dependencies
+    database/supabase_client.py    Supabase persistence layer
+    scraper/                       Gmail client, parser, scheduler helpers
+    scripts/trigger_daily_timetables.py
+    tests/                         Parser and backend tests
   frontend/
     src/
-      App.tsx                  Main authenticated dashboard
-      context/AuthContext.tsx  Login/session state
-      services/api.ts          Axios API client and backend wake detector
-      components/              Login, status, semester, stats, theme, and timetable UI
-      utils/                   Semester and course correction helpers
-      types/                   Shared TypeScript API types
-  README.md
+      App.tsx                      Main dashboard
+      context/AuthContext.tsx      Google login/session flow
+      services/api.ts              Axios client and Render wake detector
+      components/                  Login, status, semester, stats, theme, timetable UI
+      utils/                       Semester normalization and course corrections
 ```
 
-## Local Setup
+## Environment Variables
 
-### Prerequisites
+Backend:
 
-- Python 3.8+
-- Node.js 16+
-- A Google Cloud OAuth client with Gmail API enabled
-- A Supabase project with backend service key access
+```env
+FLASK_SECRET_KEY=
+PUBLIC_BACKEND_URL=https://your-backend.onrender.com
+SUPABASE_URL=
+SUPABASE_SERVICE_KEY=
+CLIENT_SECRET_JSON={"web":{...}}
+AUTOMATION_SECRET=
+EMAIL_DELIVERY_PROVIDER=official_gmail
+OFFICIAL_GMAIL_SENDER_EMAIL=your-sender@gmail.com
+OFFICIAL_GMAIL_CLIENT_SECRET_JSON={"web":{...}}
+OFFICIAL_GMAIL_REFRESH_TOKEN=
+TZ=Asia/Karachi
+GMAIL_QUERY_BASE=subject:("Class Schedule" OR schedule) in:inbox
+ALLOWED_SEMESTERS=
+CHECK_HOUR_LOCAL=20
+CHECK_MINUTE_LOCAL=0
+NEXT_DAY_AVAILABLE_HOUR=17
+NEWER_THAN_DAYS=2
+```
 
-### Backend
+Frontend:
+
+```env
+REACT_APP_API_URL=https://your-backend.onrender.com
+```
+
+## cron-job.org Setup
+
+Create two cron jobs.
+
+Wake job:
+
+```text
+Title: Inbox2Table Wake Backend
+URL: https://your-backend.onrender.com/api/health
+Method: GET
+Schedule: Every day at 19:55
+Timezone: Asia/Karachi
+```
+
+Daily email job:
+
+```text
+Title: Inbox2Table Daily Email
+URL: https://your-backend.onrender.com/api/automation/send-daily-timetables
+Method: POST
+Schedule: Every day at 20:00
+Timezone: Asia/Karachi
+Body: {}
+Header: Authorization: Bearer YOUR_AUTOMATION_SECRET
+Header: Content-Type: application/json
+```
+
+## Local Development
+
+Backend:
 
 ```bash
 cd backend
@@ -131,9 +154,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-The backend runs on `http://localhost:5000` by default.
-
-### Frontend
+Frontend:
 
 ```bash
 cd frontend
@@ -141,185 +162,18 @@ npm install
 npm start
 ```
 
-The frontend runs on `http://localhost:3000` by default.
-
-## Environment Variables
-
-### Backend
-
-| Variable | Purpose |
-| --- | --- |
-| `FLASK_SECRET_KEY` | Flask session secret |
-| `PUBLIC_BACKEND_URL` | Public backend URL used for OAuth callbacks |
-| `SUPABASE_URL` | Supabase project URL |
-| `SUPABASE_SERVICE_KEY` | Supabase service key used by the backend |
-| `CLIENT_SECRET_JSON` | Google OAuth client secret JSON for hosted environments |
-| `AUTOMATION_SECRET` | Secret token used to protect the daily email automation endpoint |
-| `EMAIL_DELIVERY_PROVIDER` | Email sender selection. Use `official_gmail` on Render to send from the official Inbox2Table mailbox. |
-| `OFFICIAL_GMAIL_CLIENT_SECRET_JSON` | Google OAuth client secret JSON for the official Gmail sender mailbox |
-| `OFFICIAL_GMAIL_REFRESH_TOKEN` | One-time OAuth refresh token for the official Gmail sender mailbox |
-| `OFFICIAL_GMAIL_SENDER_EMAIL` | Official Gmail sender address, for example `inbox2table@gmail.com` |
-| `OUTLOOK_CLIENT_ID` | Microsoft app client ID for the official sender mailbox |
-| `OUTLOOK_CLIENT_SECRET` | Microsoft app client secret for the official sender mailbox |
-| `OUTLOOK_REFRESH_TOKEN` | One-time OAuth refresh token for the official sender mailbox |
-| `OUTLOOK_SENDER_EMAIL` | Official sender address, for example `inbox2table@hotmail.com` |
-| `OUTLOOK_TENANT` | Microsoft tenant for the sender flow. Use `consumers` for Hotmail/Outlook personal accounts. |
-| `RESEND_API_KEY` | Optional email API key if a verified sender/domain is added later |
-| `EMAIL_FROM` | Verified sender address for API-based email |
-| `SMTP_HOST` | SMTP host for non-Render/paid deployments |
-| `SMTP_PORT` | SMTP port for non-Render/paid deployments |
-| `SMTP_USERNAME` | SMTP sender email address |
-| `SMTP_PASSWORD` | SMTP password or app password |
-| `SMTP_FROM_NAME` | Sender display name, for example `Inbox2Table` |
-| `TZ` | Local timezone, defaults to `Asia/Karachi` |
-| `GMAIL_QUERY_BASE` | Base Gmail query for timetable emails |
-| `ALLOWED_SEMESTERS` | Default comma-separated semester filters |
-| `CHECK_HOUR_LOCAL` | Scheduled scrape hour |
-| `CHECK_MINUTE_LOCAL` | Scheduled scrape minute |
-| `NEXT_DAY_AVAILABLE_HOUR` | Hour after which tomorrow's timetable is targeted |
-| `NEWER_THAN_DAYS` | Gmail search window |
-
-For local development, you can also place Google OAuth credentials at:
-
-```text
-backend/credentials/client_secret.json
-```
-
-### Frontend
-
-| Variable | Purpose |
-| --- | --- |
-| `REACT_APP_API_URL` | Optional explicit backend URL. If omitted, the frontend tries local backend candidates. |
-
-## Supabase Data Model
-
-The backend expects these logical tables:
-
-- `users`: stores one row per authenticated email.
-- `tokens`: stores Gmail OAuth token payloads per user.
-- `user_settings`: stores semester filters and user-level scraper settings.
-- `timetable_cache`: stores the latest parsed timetable payloads.
-
 ## Testing
-
-Backend tests:
 
 ```bash
 cd backend
 python -m pytest tests
 ```
 
-Frontend build check:
-
 ```bash
 cd frontend
 npm run build
 ```
-
-The parser tests cover cases like:
-
-- flattened Gmail rows
-- HTML-table rows
-- slash-separated semester labels
-- BS Psychology/Social Sciences normalization
-- cancelled classes
-- room/faculty boundary mistakes
-- lab and meeting room names
-- malformed course code/title combinations
-
-## Deployment Notes
-
-The backend is designed to run on Render or another Python web service using Gunicorn:
-
-```bash
-cd backend
-gunicorn -w 4 -b 0.0.0.0:$PORT app:app
-```
-
-For hosted OAuth, set `PUBLIC_BACKEND_URL` to the deployed backend origin and add this callback URL in Google Cloud Console:
-
-```text
-https://your-backend.example.com/api/auth/gmail/callback
-```
-
-The frontend can be deployed as a static React build:
-
-```bash
-cd frontend
-npm run build
-```
-
-Set `REACT_APP_API_URL` to the deployed backend URL when the frontend and backend are hosted separately.
-
-## Daily Email Automation
-
-Inbox2Table can send a formatted timetable email every day. The user enters a personal email in the dashboard's Quick Actions area, and the backend stores that recipient in the user's Supabase settings. A scheduled backend job then:
-
-1. Finds every user with daily email enabled.
-2. Runs the scraper using that user's Gmail OAuth token and semester filters.
-3. Formats the timetable as an HTML email.
-4. Sends it to the saved personal email address.
-
-No-domain setup on Render:
-
-Inbox2Table reads timetable emails from the student's Google account, but sends daily timetable emails from the official Gmail sender mailbox. This keeps university inbox access separate from delivery identity and avoids Render's blocked SMTP ports by using the Gmail API over HTTPS.
-
-```text
-AUTOMATION_SECRET=choose-a-long-random-secret
-EMAIL_DELIVERY_PROVIDER=official_gmail
-OFFICIAL_GMAIL_SENDER_EMAIL=inbox2table@gmail.com
-OFFICIAL_GMAIL_CLIENT_SECRET_JSON={"web":{...}}
-OFFICIAL_GMAIL_REFRESH_TOKEN=generated-by-the-official-gmail-sender-connect-flow
-```
-
-To generate `OFFICIAL_GMAIL_REFRESH_TOKEN`, create a Google OAuth web client for the official sender mailbox, add this redirect URI, and then open the sender connect URL:
-
-```text
-Redirect URI: https://your-backend.example.com/api/auth/official-gmail-sender/callback
-Connect URL: https://your-backend.example.com/api/auth/official-gmail-sender?token=YOUR_AUTOMATION_SECRET
-Google scope: https://www.googleapis.com/auth/gmail.send
-```
-
-SMTP can be used on hosts that allow outbound SMTP traffic:
-
-```text
-SMTP_HOST=smtp-mail.outlook.com
-SMTP_PORT=587
-SMTP_USERNAME=your-outlook-sender@example.com
-SMTP_PASSWORD=your-outlook-password-or-app-password
-SMTP_FROM_NAME=Inbox2Table
-AUTOMATION_SECRET=choose-a-long-random-secret
-```
-
-Render free services block outbound traffic to SMTP ports `25`, `465`, and `587`, so API-based email over HTTPS is the reliable option there.
-
-For Render, create a separate Cron Job from the same repo. This command wakes the hosted backend through its protected automation endpoint, so the web service starts even after inactivity and then sends the enabled daily emails:
-
-```text
-Command: cd backend && python scripts/trigger_daily_timetables.py
-Schedule: 0 15 * * *
-```
-
-Render cron schedules use UTC, so `0 15 * * *` runs at 8:00 PM in Pakistan Standard Time (`Asia/Karachi`).
-
-You can also trigger the job through the protected web endpoint:
-
-```bash
-curl -X POST https://your-backend.example.com/api/automation/send-daily-timetables \
-  -H "Authorization: Bearer YOUR_AUTOMATION_SECRET"
-```
-
-## Recruiter Notes
-
-This project is more than a CRUD dashboard. The main engineering challenge was making unreliable email content reliable enough for a usable product. I had to combine API integration, OAuth, backend state management, custom parsing, caching, frontend state, responsive UI, deployment constraints, and real edge-case testing into one workflow.
-
-The parts I am most proud of are:
-
-- the custom parser, because it handles inconsistent real-world timetable emails instead of assuming perfect input;
-- the multi-user Supabase design, because each user has their own Gmail tokens, settings, and cache;
-- the user experience around slow hosted backends, because the app now explains Render cold starts instead of appearing broken;
-- the responsive schedule UI, because it gives a compact table on desktop and readable class cards on mobile.
 
 ## Status
 
-Inbox2Table is functional as a deployed full-stack application. The backend can authenticate with Gmail, parse timetable emails, store results in Supabase, and serve them to a React dashboard.
+Inbox2Table is complete as a deployed full-stack project. It covers OAuth, Gmail API integration, custom parsing, Supabase-backed multi-user state, responsive frontend UX, Render cold-start handling, and scheduled daily email automation.

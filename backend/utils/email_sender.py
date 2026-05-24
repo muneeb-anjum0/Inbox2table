@@ -3,6 +3,7 @@ import base64
 import requests
 import smtplib
 from email.message import EmailMessage
+from email.utils import formatdate, make_msgid
 from datetime import datetime
 from typing import Dict, List
 
@@ -213,6 +214,8 @@ def send_timetable_email(to_email: str, university_email: str, timetable: Dict) 
     msg['Subject'] = subject
     msg['From'] = f"{smtp['from_name']} <{username}>"
     msg['To'] = to_email
+    msg['Date'] = formatdate(localtime=True)
+    msg['Message-ID'] = make_msgid(domain='inbox2table.local')
     msg.set_content(_build_plain_text(timetable))
     msg.add_alternative(build_timetable_email_html(timetable, university_email), subtype='html')
 
@@ -264,6 +267,8 @@ def send_timetable_email_with_gmail(
     msg['Subject'] = subject
     msg['From'] = university_email
     msg['To'] = to_email
+    msg['Date'] = formatdate(localtime=True)
+    msg['Message-ID'] = make_msgid(domain='inbox2table.local')
     msg.set_content(_build_plain_text(timetable))
     msg.add_alternative(build_timetable_email_html(timetable, university_email), subtype='html')
 
@@ -274,13 +279,29 @@ def send_timetable_email_with_gmail(
             userId='me',
             body={'raw': raw},
         ).execute()
+        sent_message = service.users().messages().get(
+            userId='me',
+            id=send_result.get('id'),
+            format='metadata',
+            metadataHeaders=['From', 'To', 'Subject', 'Date', 'Message-ID'],
+        ).execute()
     except HttpError as error:
         raise RuntimeError(f"Gmail send failed: {error}") from error
+
+    headers = {}
+    for header in sent_message.get('payload', {}).get('headers', []) or []:
+        name = header.get('name')
+        value = header.get('value')
+        if name and value:
+            headers[name.lower()] = value
 
     return {
         'provider': 'gmail',
         'message_id': send_result.get('id'),
         'thread_id': send_result.get('threadId'),
+        'label_ids': sent_message.get('labelIds', []),
+        'headers': headers,
+        'snippet': sent_message.get('snippet', ''),
         'subject': subject,
         'from': university_email,
         'to': to_email,

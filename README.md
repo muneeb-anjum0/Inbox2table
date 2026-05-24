@@ -154,6 +154,12 @@ The frontend runs on `http://localhost:3000` by default.
 | `SUPABASE_URL` | Supabase project URL |
 | `SUPABASE_SERVICE_KEY` | Supabase service key used by the backend |
 | `CLIENT_SECRET_JSON` | Google OAuth client secret JSON for hosted environments |
+| `AUTOMATION_SECRET` | Secret token used to protect the daily email automation endpoint |
+| `SMTP_HOST` | Outlook SMTP host, usually `smtp-mail.outlook.com` |
+| `SMTP_PORT` | Outlook SMTP port, usually `587` |
+| `SMTP_USERNAME` | Sender email address for automation |
+| `SMTP_PASSWORD` | Sender email password or app password |
+| `SMTP_FROM_NAME` | Sender display name, for example `Inbox2Table` |
 | `TZ` | Local timezone, defaults to `Asia/Karachi` |
 | `GMAIL_QUERY_BASE` | Base Gmail query for timetable emails |
 | `ALLOWED_SEMESTERS` | Default comma-separated semester filters |
@@ -233,6 +239,42 @@ npm run build
 ```
 
 Set `REACT_APP_API_URL` to the deployed backend URL when the frontend and backend are hosted separately.
+
+## Daily Email Automation
+
+Inbox2Table can send a formatted timetable email every day. The user enters a personal email in the dashboard's Quick Actions area, and the backend stores that recipient in the user's Supabase settings. A scheduled backend job then:
+
+1. Finds every user with daily email enabled.
+2. Runs the scraper using that user's Gmail OAuth token and semester filters.
+3. Formats the timetable as an HTML email.
+4. Sends it to the saved personal email address.
+
+Required backend environment variables:
+
+```text
+SMTP_HOST=smtp-mail.outlook.com
+SMTP_PORT=587
+SMTP_USERNAME=your-outlook-sender@example.com
+SMTP_PASSWORD=your-outlook-password-or-app-password
+SMTP_FROM_NAME=Inbox2Table
+AUTOMATION_SECRET=choose-a-long-random-secret
+```
+
+For Render, create a separate Cron Job from the same repo:
+
+```text
+Command: cd backend && python scripts/send_daily_timetables.py
+Schedule: 0 15 * * *
+```
+
+Render cron schedules use UTC, so `0 15 * * *` runs at 8:00 PM in Pakistan Standard Time (`Asia/Karachi`).
+
+You can also trigger the job through the protected web endpoint:
+
+```bash
+curl -X POST https://your-backend.example.com/api/automation/send-daily-timetables \
+  -H "Authorization: Bearer YOUR_AUTOMATION_SECRET"
+```
 
 ## Recruiter Notes
 

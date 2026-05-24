@@ -177,13 +177,51 @@ class SupabaseManager:
                 'allowed_semesters': ['BS (SE) - 5C'],
                 'gmail_query_base': 'subject:("Class Schedule" OR schedule) in:inbox',
                 'newer_than_days': 2,
-                'timezone': 'Asia/Karachi'
+                'timezone': 'Asia/Karachi',
+                'personal_email': '',
+                'daily_email_enabled': False
             }
             return default_settings
             
         except Exception as e:
             logger.error(f"Error getting settings for user {user_id}: {e}")
             return {}
+
+    def list_users_with_daily_email(self) -> List[Dict[str, Any]]:
+        """Return users that configured a personal email for daily timetable delivery."""
+        try:
+            settings_result = self.client.table('user_settings').select('user_id, settings').execute()
+            rows = settings_result.data or []
+            configured_users: List[Dict[str, Any]] = []
+
+            for row in rows:
+                settings = row.get('settings') or {}
+                personal_email = (settings.get('personal_email') or '').strip()
+                if not personal_email:
+                    continue
+                if settings.get('daily_email_enabled') is False:
+                    continue
+
+                user_id = row.get('user_id')
+                if not user_id:
+                    continue
+
+                user_result = self.client.table('users').select('*').eq('id', user_id).limit(1).execute()
+                if not user_result.data:
+                    logger.warning("Daily email configured for missing user_id=%s", user_id)
+                    continue
+
+                configured_users.append({
+                    'user': user_result.data[0],
+                    'settings': settings,
+                    'personal_email': personal_email,
+                })
+
+            return configured_users
+
+        except Exception as e:
+            logger.error(f"Error listing daily email users: {e}")
+            return []
 
     def cleanup_old_cache(self) -> bool:
         """Clean up cache older than 7 days"""

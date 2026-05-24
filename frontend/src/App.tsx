@@ -9,7 +9,7 @@ import SemesterManager from './components/SemesterManager/SemesterManager';
 import LoginScreen from './components/LoginScreen/LoginScreen';
 import ThemeToggle from './components/ThemeToggle/ThemeToggle';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Mail, Save } from 'lucide-react';
 import { normalizeSemesterLabel, normalizeSemesterKey } from './utils/semesterNormalization';
 import { TimetableItem } from './types/api';
 
@@ -140,6 +140,8 @@ function AppContent() {
   const [showSemesterManager, setShowSemesterManager] = useState(false);
   const [operationInProgress, setOperationInProgress] = useState(false);
   const [isBackendWaking, setIsBackendWaking] = useState(false);
+  const [personalEmail, setPersonalEmail] = useState('');
+  const [isPersonalEmailSaving, setIsPersonalEmailSaving] = useState(false);
 
   const clearLogoutConfirmTimer = () => {
     if (logoutConfirmTimer.current !== null) {
@@ -250,6 +252,7 @@ function AppContent() {
 
       if (response.success && response.data) {
         setConfig(response.data);
+        setPersonalEmail(response.data.personal_email || '');
         return response.data;
       } else {
         console.error('Config load failed:', response);
@@ -569,6 +572,52 @@ function AppContent() {
     }
   };
 
+  const handleSavePersonalEmail = async () => {
+    if (isPersonalEmailSaving || operationInProgress) {
+      return;
+    }
+
+    const trimmedEmail = personalEmail.trim();
+
+    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setStatus('error');
+      setMessage('Please enter a valid personal email address.');
+      return;
+    }
+
+    try {
+      setIsPersonalEmailSaving(true);
+      setStatus('loading');
+      setMessage(trimmedEmail ? 'Saving daily email recipient...' : 'Disabling daily email delivery...');
+
+      const response = await apiService.updatePersonalEmail(trimmedEmail);
+
+      if (response.success) {
+        setPersonalEmail(trimmedEmail);
+        setConfig((currentConfig) => currentConfig ? {
+          ...currentConfig,
+          personal_email: trimmedEmail,
+          daily_email_enabled: Boolean(trimmedEmail),
+        } : currentConfig);
+        setStatus('success');
+        setMessage(
+          trimmedEmail
+            ? 'Daily timetable email saved. Automation will send it at 8:00 PM.'
+            : 'Daily timetable email disabled.'
+        );
+      } else {
+        setStatus('error');
+        setMessage(response.error || 'Failed to save daily email recipient');
+      }
+    } catch (error) {
+      console.error('Error saving personal email:', error);
+      setStatus('error');
+      setMessage('Failed to save daily email recipient');
+    } finally {
+      setIsPersonalEmailSaving(false);
+    }
+  };
+
   const handleSaveSemesters = async (newSemesters: string[]) => {
     if (isSemesterUpdateRunning || operationInProgress) {
       return;
@@ -587,6 +636,8 @@ function AppContent() {
         setConfig((currentConfig) => ({
           gmail_query: currentConfig?.gmail_query || '',
           semester_filter: newSemesters,
+          personal_email: currentConfig?.personal_email || personalEmail.trim(),
+          daily_email_enabled: Boolean(currentConfig?.personal_email || personalEmail.trim()),
           schedule_time: currentConfig?.schedule_time || '00:00',
           timezone: currentConfig?.timezone || 'Asia/Karachi',
           max_results: currentConfig?.max_results || 50,
@@ -753,6 +804,35 @@ function AppContent() {
                     )}
                   </div>
                 </div>
+
+                <div className="daily-email daily-email--mobile">
+                  <div className="daily-email__label">
+                    <Mail className="daily-email__icon" aria-hidden="true" />
+                    <span>Daily email</span>
+                  </div>
+
+                  <div className="daily-email__controls">
+                    <input
+                      type="email"
+                      value={personalEmail}
+                      onChange={(event) => setPersonalEmail(event.target.value)}
+                      placeholder="Personal email"
+                      className="daily-email__input"
+                      aria-label="Personal email for daily timetable"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handleSavePersonalEmail}
+                      disabled={isPersonalEmailSaving || operationInProgress}
+                      className="daily-email__save"
+                      title="Save daily email recipient"
+                      aria-label="Save daily email recipient"
+                    >
+                      <Save className="daily-email__save-icon" aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
               </div>
             </section>
           ) : (
@@ -824,6 +904,39 @@ function AppContent() {
                       <span className="signout-cancel__text">Cancel</span>
                     </button>
                   )}
+                </div>
+              </div>
+
+              <div className="daily-email">
+                <div className="daily-email__copy">
+                  <div className="daily-email__label">
+                    <Mail className="daily-email__icon" aria-hidden="true" />
+                    <span>Daily email</span>
+                  </div>
+                  <p>Send the formatted timetable to your personal inbox every day at 8:00 PM.</p>
+                </div>
+
+                <div className="daily-email__controls">
+                  <input
+                    type="email"
+                    value={personalEmail}
+                    onChange={(event) => setPersonalEmail(event.target.value)}
+                    placeholder="muneeb.anjum0@gmail.com"
+                    className="daily-email__input"
+                    aria-label="Personal email for daily timetable"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={handleSavePersonalEmail}
+                    disabled={isPersonalEmailSaving || operationInProgress}
+                    className="daily-email__save"
+                    title="Save daily email recipient"
+                    aria-label="Save daily email recipient"
+                  >
+                    <Save className="daily-email__save-icon" aria-hidden="true" />
+                    <span>{isPersonalEmailSaving ? 'Saving' : 'Save'}</span>
+                  </button>
                 </div>
               </div>
             </section>

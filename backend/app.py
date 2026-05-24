@@ -610,6 +610,8 @@ def get_config():
         safe_config = {
             'gmail_query': user_settings.get('gmail_query_base', settings.gmail_query_base),
             'semester_filter': user_settings.get('allowed_semesters', settings.allowed_semesters),
+            'personal_email': user_settings.get('personal_email', ''),
+            'daily_email_enabled': user_settings.get('daily_email_enabled', bool(user_settings.get('personal_email'))),
             'schedule_time': f"{settings.check_hour_local:02d}:{settings.check_minute_local:02d}",
             'timezone': user_settings.get('timezone', settings.tz),
             'max_results': getattr(settings, 'max_results_per_semester', 50)
@@ -618,6 +620,53 @@ def get_config():
     except Exception as e:
         logger.error(f"Error loading config: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/config/personal-email', methods=['POST', 'OPTIONS'])
+def update_personal_email():
+    """Update the personal recipient email used for daily timetable delivery."""
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    try:
+        user, error_response, status_code = get_user_from_request()
+        if error_response:
+            return error_response, status_code
+
+        data = request.get_json() or {}
+        personal_email = (data.get('personal_email') or '').strip()
+
+        if personal_email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", personal_email):
+            return jsonify({
+                'success': False,
+                'error': 'Please enter a valid email address'
+            }), 400
+
+        current_settings = supabase_manager.get_user_settings(user['id'])
+        current_settings['personal_email'] = personal_email
+        current_settings['daily_email_enabled'] = bool(personal_email)
+
+        success = supabase_manager.save_user_settings(user['id'], current_settings)
+
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to save personal email'
+            }), 500
+
+        return jsonify({
+            'success': True,
+            'message': 'Daily email recipient saved' if personal_email else 'Daily email disabled',
+            'personal_email': personal_email,
+            'daily_email_enabled': bool(personal_email),
+            'timestamp': datetime.now().isoformat()
+        })
+
+    except Exception as e:
+        logger.error(f"Error updating personal email: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 @app.route('/api/config/semesters', methods=['POST', 'OPTIONS'])
 def update_semesters():
@@ -762,6 +811,36 @@ def clear_cache():
     except Exception as e:
         logger.error(f"Error in clear_cache: {e}")
         return jsonify({'success': False, 'message': 'Internal server error'}), 500
+
+@app.route('/api/automation/send-daily-timetables', methods=['POST'])
+def send_daily_timetables_automation():
+    """Protected endpoint for external schedulers to trigger daily timetable emails."""
+    try:
+        expected_token = os.environ.get('AUTOMATION_SECRET', '')
+        provided_token = request.headers.get('X-Automation-Token', '')
+        auth_header = request.headers.get('Authorization', '')
+
+        if auth_header.startswith('Bearer '):
+            provided_token = auth_header.replace('Bearer ', '', 1).strip()
+
+        if not expected_token or provided_token != expected_token:
+            return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+
+        from utils.daily_email import send_daily_timetable_emails
+
+        result = send_daily_timetable_emails()
+        return jsonify({
+            **result,
+            'timestamp': datetime.now().isoformat()
+        }), 200 if result.get('success') else 207
+
+    except Exception as e:
+        logger.error(f"Daily timetable automation failed: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
 
 @app.route('/api/timetable', methods=['GET'])
 def get_latest_timetable():

@@ -225,6 +225,18 @@ export const apiService = {
     return response.data;
   },
 
+  // Update daily timetable recipient
+  updatePersonalEmail: async (personalEmail: string): Promise<ApiResponse<{ personal_email: string; daily_email_enabled: boolean }>> => {
+    if (rateLimiter.shouldBlock('/api/config/personal-email')) {
+      throw new Error('Please wait before updating your email again');
+    }
+
+    const response: AxiosResponse<ApiResponse<{ personal_email: string; daily_email_enabled: boolean }>> = await api.post('/api/config/personal-email', {
+      personal_email: personalEmail,
+    });
+    return response.data;
+  },
+
   // Run scraper
   runScraper: async (): Promise<ApiResponse<TimetableData>> => {
     if (rateLimiter.shouldBlock('/api/scrape')) {

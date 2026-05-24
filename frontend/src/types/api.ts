@@ -37,6 +37,8 @@ export interface ApiResponse<T = any> {
 export interface ConfigData {
   gmail_query: string;
   semester_filter: string[];
+  personal_email?: string;
+  daily_email_enabled?: boolean;
   schedule_time: string;
   timezone: string;
   max_results: number;

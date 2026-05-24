@@ -61,6 +61,9 @@ def send_daily_timetable_email_for_user(
         }
 
     timetable = scrape_result.get('data') or {}
+    if settings.get('daily_email_last_result', {}).get('job_id'):
+        timetable['email_job_id'] = settings['daily_email_last_result']['job_id']
+
     if status_callback:
         status_callback({
             'status': 'sending',
@@ -85,15 +88,16 @@ def send_daily_timetable_email_for_user(
 
     if provider == 'gmail':
         token_data = supabase_manager.get_user_tokens(user_id)
-        send_timetable_email_with_gmail(personal_email, university_email, timetable, token_data)
+        send_result = send_timetable_email_with_gmail(personal_email, university_email, timetable, token_data)
     else:
-        send_timetable_email(personal_email, university_email, timetable)
+        send_result = send_timetable_email(personal_email, university_email, timetable)
 
     return {
         'user_email': university_email,
         'personal_email': personal_email,
         'success': True,
         'items': len(timetable.get('items') or []),
+        'send_result': send_result,
     }
 
 

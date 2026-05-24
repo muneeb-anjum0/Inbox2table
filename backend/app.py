@@ -917,7 +917,7 @@ def send_test_timetable_email():
                     **result,
                     'status': 'success' if result.get('success') else 'error',
                     'message': (
-                        f"Test email sent to {result.get('personal_email')}"
+                        f"Test email accepted by {result.get('send_result', {}).get('provider', 'email provider')} for {result.get('personal_email')}"
                         if result.get('success')
                         else result.get('error', 'Test email failed')
                     ),

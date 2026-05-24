@@ -46,6 +46,14 @@ export interface ConfigData {
     error?: string;
     personal_email?: string;
     items?: number;
+    send_result?: {
+      provider?: string;
+      message_id?: string;
+      thread_id?: string;
+      subject?: string;
+      from?: string;
+      to?: string;
+    };
     started_at?: string;
     finished_at?: string;
   } | null;

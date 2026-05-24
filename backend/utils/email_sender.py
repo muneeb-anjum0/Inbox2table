@@ -185,12 +185,17 @@ def build_timetable_email_html(timetable: Dict, university_email: str) -> str:
     """
 
 
-def send_timetable_email(to_email: str, university_email: str, timetable: Dict) -> None:
+def _build_subject(timetable: Dict) -> str:
+    job_marker = timetable.get('email_job_id')
+    suffix = f" [{job_marker[:8]}]" if job_marker else ""
+    return f"Inbox2Table: timetable for {timetable.get('for_day', 'today')}{suffix}"
+
+
+def send_timetable_email(to_email: str, university_email: str, timetable: Dict) -> Dict:
     provider = get_email_delivery_provider()
 
     if provider == 'resend':
-        send_timetable_email_with_resend(to_email, university_email, timetable)
-        return
+        return send_timetable_email_with_resend(to_email, university_email, timetable)
 
     if provider == 'gmail':
         raise RuntimeError('Gmail API sending requires token data. Use send_timetable_email_with_gmail.')
@@ -202,7 +207,7 @@ def send_timetable_email(to_email: str, university_email: str, timetable: Dict) 
     if not username or not password:
         raise RuntimeError('SMTP_USERNAME and SMTP_PASSWORD must be configured')
 
-    subject = f"Inbox2Table: timetable for {timetable.get('for_day', 'today')}"
+    subject = _build_subject(timetable)
 
     msg = EmailMessage()
     msg['Subject'] = subject
@@ -217,6 +222,10 @@ def send_timetable_email(to_email: str, university_email: str, timetable: Dict) 
         server.ehlo()
         server.login(username, password)
         server.send_message(msg)
+        return {
+            'provider': 'smtp',
+            'subject': subject,
+        }
 
 
 def send_timetable_email_with_gmail(
@@ -224,7 +233,7 @@ def send_timetable_email_with_gmail(
     university_email: str,
     timetable: Dict,
     token_data: Dict,
-) -> None:
+) -> Dict:
     if not token_data:
         raise RuntimeError('Gmail token data is missing. Sign in with Gmail again.')
 
@@ -250,7 +259,7 @@ def send_timetable_email_with_gmail(
     )
     service = build('gmail', 'v1', credentials=credentials, cache_discovery=False)
 
-    subject = f"Inbox2Table: timetable for {timetable.get('for_day', 'today')}"
+    subject = _build_subject(timetable)
     msg = EmailMessage()
     msg['Subject'] = subject
     msg['From'] = university_email
@@ -261,15 +270,24 @@ def send_timetable_email_with_gmail(
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
 
     try:
-        service.users().messages().send(
+        send_result = service.users().messages().send(
             userId='me',
             body={'raw': raw},
         ).execute()
     except HttpError as error:
         raise RuntimeError(f"Gmail send failed: {error}") from error
 
+    return {
+        'provider': 'gmail',
+        'message_id': send_result.get('id'),
+        'thread_id': send_result.get('threadId'),
+        'subject': subject,
+        'from': university_email,
+        'to': to_email,
+    }
 
-def send_timetable_email_with_resend(to_email: str, university_email: str, timetable: Dict) -> None:
+
+def send_timetable_email_with_resend(to_email: str, university_email: str, timetable: Dict) -> Dict:
     resend = _resend_settings()
     api_key = resend['api_key']
     from_email = resend['from_email']
@@ -280,7 +298,7 @@ def send_timetable_email_with_resend(to_email: str, university_email: str, timet
     if not from_email:
         raise RuntimeError('EMAIL_FROM must be configured for Resend')
 
-    subject = f"Inbox2Table: timetable for {timetable.get('for_day', 'today')}"
+    subject = _build_subject(timetable)
     html = build_timetable_email_html(timetable, university_email)
 
     response = requests.post(
@@ -301,3 +319,9 @@ def send_timetable_email_with_resend(to_email: str, university_email: str, timet
 
     if response.status_code >= 400:
         raise RuntimeError(f"Resend API error {response.status_code}: {response.text}")
+
+    return {
+        'provider': 'resend',
+        'response': response.json() if response.content else {},
+        'subject': subject,
+    }

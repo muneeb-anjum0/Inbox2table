@@ -663,7 +663,12 @@ function AppContent() {
 
           if (lastResult?.status === 'success') {
             setStatus('success');
-            setMessage(lastResult.message || `Test email sent to ${trimmedEmail}.`);
+            const sentSubject = lastResult.send_result?.subject;
+            setMessage(
+              sentSubject
+                ? `Accepted by ${lastResult.send_result?.provider || 'provider'}: ${sentSubject}`
+                : lastResult.message || `Test email sent to ${trimmedEmail}.`
+            );
             await checkStatus();
             return;
           }

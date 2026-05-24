@@ -1243,27 +1243,34 @@ def send_daily_timetables_automation():
 
         from utils.daily_email import send_daily_timetable_emails
 
-        result = send_daily_timetable_emails()
-        compact_results = []
-        for item in result.get('results', []) or []:
-            send_result = item.get('send_result') or {}
-            compact_results.append({
-                'user_email': item.get('user_email'),
-                'personal_email': item.get('personal_email'),
-                'success': item.get('success'),
-                'items': item.get('items'),
-                'error': item.get('error'),
-                'provider': send_result.get('provider'),
-                'subject': send_result.get('subject'),
-            })
+        job_id = str(uuid.uuid4())
+
+        def run_daily_email_job():
+            try:
+                result = send_daily_timetable_emails()
+                logger.info(
+                    "Daily timetable automation job %s finished: success=%s processed=%s failed=%s",
+                    job_id,
+                    result.get('success'),
+                    result.get('processed'),
+                    result.get('failed'),
+                )
+            except Exception as job_error:
+                logger.error(
+                    "Daily timetable automation job %s failed: %s",
+                    job_id,
+                    job_error,
+                    exc_info=True,
+                )
+
+        threading.Thread(target=run_daily_email_job, daemon=True).start()
 
         return jsonify({
-            'success': result.get('success'),
-            'processed': result.get('processed', 0),
-            'failed': result.get('failed', 0),
-            'results': compact_results,
+            'success': True,
+            'job_id': job_id,
+            'message': 'Daily timetable automation started',
             'timestamp': datetime.now().isoformat()
-        }), 200 if result.get('success') else 207
+        }), 202
 
     except Exception as e:
         logger.error(f"Daily timetable automation failed: {e}", exc_info=True)

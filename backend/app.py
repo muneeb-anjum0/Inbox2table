@@ -43,6 +43,23 @@ CORS(
     methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 )
 
+
+def _is_allowed_cors_origin(origin: str) -> bool:
+    return bool(origin and any(re.match(pattern, origin) for pattern in allowed_origin_patterns))
+
+
+@app.after_request
+def add_api_cors_headers(response):
+    """Keep API errors readable by browsers even when an endpoint fails."""
+    origin = request.headers.get('Origin', '')
+    if request.path.startswith('/api/') and _is_allowed_cors_origin(origin):
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-User-Email'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+        response.headers['Vary'] = 'Origin'
+    return response
+
 # Enhanced logging setup
 logging.basicConfig(
     level=logging.INFO,

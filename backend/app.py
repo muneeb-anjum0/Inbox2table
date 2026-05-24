@@ -170,9 +170,10 @@ def _cleanup_official_gmail_sender_state_store():
         official_gmail_sender_state_store.pop(state_key, None)
 
 
-def _store_official_gmail_sender_state(state):
+def _store_official_gmail_sender_state(state, code_verifier=None):
     _cleanup_official_gmail_sender_state_store()
     official_gmail_sender_state_store[state] = {
+        'code_verifier': code_verifier,
         'created_at': datetime.now().timestamp(),
     }
 
@@ -349,7 +350,8 @@ def official_gmail_sender_auth():
             include_granted_scopes='true',
             prompt='consent',
         )
-        _store_official_gmail_sender_state(state)
+        code_verifier = flow.code_verifier if hasattr(flow, 'code_verifier') else None
+        _store_official_gmail_sender_state(state, code_verifier)
 
         if request.args.get('json') == '1':
             return jsonify({
@@ -389,6 +391,9 @@ def official_gmail_sender_callback():
             scopes=['https://www.googleapis.com/auth/gmail.send'],
         )
         flow.redirect_uri = get_official_gmail_sender_redirect_uri()
+        code_verifier = state_data.get('code_verifier')
+        if code_verifier and hasattr(flow, 'code_verifier'):
+            flow.code_verifier = code_verifier
         flow.fetch_token(authorization_response=get_public_request_url())
 
         credentials = flow.credentials

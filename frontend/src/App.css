@@ -314,6 +314,28 @@ html[data-theme='dark'] .compact-callout__icon {
   -webkit-backdrop-filter: blur(10px);
 }
 
+.app-footer {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  color: var(--theme-text-muted);
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.app-footer a {
+  color: var(--theme-text-secondary);
+  text-decoration: none;
+}
+
+.app-footer a:hover {
+  color: var(--theme-text-primary);
+  text-decoration: underline;
+}
+
 .app-loading-screen {
   min-height: 100vh;
   display: grid;

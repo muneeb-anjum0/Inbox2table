@@ -8,6 +8,7 @@ import StatusIndicator from './components/StatusIndicator/StatusIndicator';
 import SemesterManager from './components/SemesterManager/SemesterManager';
 import LoginScreen from './components/LoginScreen/LoginScreen';
 import ThemeToggle from './components/ThemeToggle/ThemeToggle';
+import LegalPage from './components/LegalPage/LegalPage';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ChevronDown, Mail, Send, Save } from 'lucide-react';
 import { normalizeSemesterLabel, normalizeSemesterKey } from './utils/semesterNormalization';
@@ -1185,8 +1186,10 @@ function AppContent() {
         </main>
 
         <footer className="bg-transparent border-0">
-          <div className="w-full py-2 text-center text-xs theme-text-muted">
-            &copy; {new Date().getFullYear()} Inbox2Table
+          <div className="app-footer">
+            <span>&copy; {new Date().getFullYear()} Inbox2Table</span>
+            <a href="/privacy">Privacy Policy</a>
+            <a href="/terms">Terms of Service</a>
           </div>
         </footer>
 
@@ -1202,6 +1205,16 @@ function AppContent() {
 }
 
 function App() {
+  const pathName = typeof window === 'undefined' ? '/' : window.location.pathname;
+
+  if (pathName === '/privacy') {
+    return <LegalPage kind="privacy" />;
+  }
+
+  if (pathName === '/terms') {
+    return <LegalPage kind="terms" />;
+  }
+
   return (
     <AuthProvider>
       <AppContent />

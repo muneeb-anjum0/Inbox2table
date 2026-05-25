@@ -313,6 +313,45 @@
   opacity: 0.76;
 }
 
+.legal-consent {
+  max-width: 460px;
+  margin-top: 16px;
+  padding: 14px 15px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 18px;
+  background: rgba(248, 250, 252, 0.86);
+  color: #475569;
+}
+
+.legal-consent__check {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  font-size: 13px;
+  line-height: 1.55;
+  font-weight: 700;
+}
+
+.legal-consent__check input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+  accent-color: #0f172a;
+}
+
+.legal-consent a,
+.legal-links a {
+  color: #2563eb;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.legal-consent a:hover,
+.legal-links a:hover {
+  text-decoration: underline;
+}
+
 .gmail-icon-wrap {
   width: 28px;
   height: 28px;
@@ -413,6 +452,17 @@
   color: #10b981;
 }
 
+.legal-links {
+  max-width: 460px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 750;
+}
+
 html[data-theme='dark'] .login-page {
   color: var(--theme-text-primary, #f2f4f7);
   background: #000000;
@@ -445,7 +495,8 @@ html[data-theme='dark'] .visual-card,
 html[data-theme='dark'] .schedule-item,
 html[data-theme='dark'] .floating-pill,
 html[data-theme='dark'] .login-panel,
-html[data-theme='dark'] .login-footer div {
+html[data-theme='dark'] .login-footer div,
+html[data-theme='dark'] .legal-consent {
   border-color: var(--theme-border-soft, #3b4049);
   background: color-mix(in srgb, var(--theme-surface-elevated, #171a1f) 88%, transparent);
   box-shadow: 0 18px 40px rgba(5, 7, 10, 0.22);
@@ -481,8 +532,14 @@ html[data-theme='dark'] .login-footer svg {
 html[data-theme='dark'] .schedule-item p,
 html[data-theme='dark'] .login-copy > p:last-child,
 html[data-theme='dark'] .floating-pill,
-html[data-theme='dark'] .login-footer div {
+html[data-theme='dark'] .login-footer div,
+html[data-theme='dark'] .legal-consent {
   color: var(--theme-text-secondary, #d0d4db);
+}
+
+html[data-theme='dark'] .legal-consent a,
+html[data-theme='dark'] .legal-links a {
+  color: #bfdbfe;
 }
 
 html[data-theme='dark'] .gmail-btn {

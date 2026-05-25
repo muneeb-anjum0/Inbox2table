@@ -74,20 +74,38 @@ logger = logging.getLogger(__name__)
 logging.getLogger('scraper.config').setLevel(logging.WARNING)
 logging.getLogger('database.supabase_client').setLevel(logging.WARNING)
 
-# If a `CLIENT_SECRET_JSON` env var is provided (Render/host secret), write it to the
-# `credentials/client_secret.json` file so the OAuth flow can read it at runtime.
+def _local_client_secrets_file():
+    return os.path.join(os.path.dirname(__file__), 'credentials', 'client_secret.json')
+
+
+def _render_secret_client_secrets_file():
+    return '/etc/secrets/client_secret.json'
+
+
 def _ensure_client_secrets_from_env():
     client_secrets_env = os.environ.get('CLIENT_SECRET_JSON')
-    client_secrets_file = os.path.join(os.path.dirname(__file__), 'credentials', 'client_secret.json')
+    client_secrets_file = _local_client_secrets_file()
     if client_secrets_env and not os.path.exists(client_secrets_file):
         try:
             os.makedirs(os.path.dirname(client_secrets_file), exist_ok=True)
-            # Write raw JSON string into the credentials file
             with open(client_secrets_file, 'w', encoding='utf-8') as f:
                 f.write(client_secrets_env)
             logger.info('Wrote client_secret.json from CLIENT_SECRET_JSON env var')
         except Exception as e:
             logger.error(f'Failed to write client_secret.json from env: {e}')
+
+
+def get_google_client_secrets_file():
+    local_file = _local_client_secrets_file()
+    render_secret_file = _render_secret_client_secrets_file()
+
+    if os.path.exists(local_file):
+        return local_file
+
+    if os.path.exists(render_secret_file):
+        return render_secret_file
+
+    return local_file
 
 
 _ensure_client_secrets_from_env()
@@ -277,7 +295,7 @@ def oauth_config_info():
         
         # Load and show current OAuth config
         import os
-        client_secrets_file = os.path.join(os.path.dirname(__file__), 'credentials', 'client_secret.json')
+        client_secrets_file = get_google_client_secrets_file()
         
         oauth_info = {
             'current_redirect_uri': redirect_uri,
@@ -603,7 +621,7 @@ def gmail_auth():
         os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
         
         # Load client secrets
-        client_secrets_file = os.path.join(os.path.dirname(__file__), 'credentials', 'client_secret.json')
+        client_secrets_file = get_google_client_secrets_file()
         
         if not os.path.exists(client_secrets_file):
             return jsonify({'error': 'Client secrets file not found'}), 500
@@ -673,7 +691,7 @@ def gmail_callback():
         os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
         
         # Load client secrets
-        client_secrets_file = os.path.join(os.path.dirname(__file__), 'credentials', 'client_secret.json')
+        client_secrets_file = get_google_client_secrets_file()
         
         # Create flow instance
         flow = Flow.from_client_secrets_file(

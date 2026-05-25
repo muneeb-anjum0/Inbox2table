@@ -116,15 +116,8 @@ const LoginScreen: React.FC = () => {
         </div>
 
         <div className="login-panel">
-          <a className="logo-wrap" href="/" aria-label="Inbox2Table home">
-            <span className="logo-mark" aria-hidden="true">
-              <CalendarDays size={24} />
-            </span>
-            <span>Inbox2Table</span>
-          </a>
-
           <div className="login-copy">
-            <p className="eyebrow">Welcome back</p>
+            <p className="eyebrow">Inbox2Table</p>
             <h1>Sign in to organize your class schedule.</h1>
             <p>
               Import your timetable from Gmail and keep your classes, rooms, and timings in one clean place.

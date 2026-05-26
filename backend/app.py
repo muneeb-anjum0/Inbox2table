@@ -1356,7 +1356,9 @@ def send_test_timetable_email():
                     **result,
                     'status': 'success' if result.get('success') else 'error',
                     'message': (
-                        f"Test email accepted by {result.get('send_result', {}).get('provider', 'email provider')} for {result.get('personal_email')}"
+                        f"No classes found email accepted by {result.get('send_result', {}).get('provider', 'email provider')} for {result.get('personal_email')}"
+                        if result.get('success') and result.get('items') == 0
+                        else f"Test email accepted by {result.get('send_result', {}).get('provider', 'email provider')} for {result.get('personal_email')}"
                         if result.get('success')
                         else result.get('error', 'Test email failed')
                     ),

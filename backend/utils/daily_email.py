@@ -1,12 +1,52 @@
 import logging
 import os
+from datetime import datetime, timedelta
 from typing import Callable, Dict, Optional
+
+from dateutil import tz
 
 from database.supabase_client import supabase_manager
 from scraper.scheduler import run_once
 from utils.email_sender import get_email_delivery_provider, send_timetable_email, send_timetable_email_with_gmail
 
 LOGGER = logging.getLogger(__name__)
+WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+NO_SCHEDULE_ERROR_MARKERS = (
+    'no message',
+    'no email',
+    'no timetable',
+    'no schedule',
+    'no classes',
+)
+
+
+def _target_empty_timetable(settings: Dict, error: str = '') -> Dict:
+    timezone = settings.get('timezone') or os.environ.get('TZ') or 'Asia/Karachi'
+    next_day_available_hour = int(settings.get('next_day_available_hour') or os.environ.get('NEXT_DAY_AVAILABLE_HOUR') or 17)
+    local_tz = tz.gettz(timezone)
+    now_local = datetime.now(tz=local_tz)
+    target_date = now_local + timedelta(days=1) if now_local.hour >= next_day_available_hour else now_local
+
+    return {
+        'for_day': WEEKDAY_NAMES[target_date.weekday()],
+        'for_date': target_date.date().isoformat(),
+        'query': settings.get('gmail_query_base'),
+        'message_id': None,
+        'items': [],
+        'semesters': settings.get('allowed_semesters') or [],
+        'summary': {
+            'total_items': 0,
+            'semester_breakdown': {},
+            'unique_courses': 0,
+            'unique_faculty': 0,
+        },
+        'no_classes_reason': error or 'No timetable email matched the configured semesters.',
+    }
+
+
+def _is_no_schedule_error(error: object) -> bool:
+    text = str(error or '').lower()
+    return any(marker in text for marker in NO_SCHEDULE_ERROR_MARKERS)
 
 
 def send_daily_timetable_email_for_user(
@@ -53,14 +93,48 @@ def send_daily_timetable_email_for_user(
     )
 
     if not scrape_result or not scrape_result.get('success'):
-        return {
-            'user_email': university_email,
-            'personal_email': personal_email,
-            'success': False,
-            'error': scrape_result.get('error') if scrape_result else 'Unknown scrape error',
+        scrape_error = scrape_result.get('error') if scrape_result else 'Unknown scrape error'
+        if _is_no_schedule_error(scrape_error):
+            timetable = _target_empty_timetable(settings, scrape_error)
+            if user_id:
+                try:
+                    supabase_manager.save_timetable_cache(user_id, timetable)
+                except Exception as cache_error:
+                    LOGGER.warning("Could not save empty timetable cache for %s: %s", university_email, cache_error)
+        else:
+            return {
+                'user_email': university_email,
+                'personal_email': personal_email,
+                'success': False,
+                'error': scrape_error,
+            }
+    else:
+        timetable = scrape_result.get('data') or {}
+
+    if not timetable:
+        timetable = _target_empty_timetable(settings)
+
+    if not isinstance(timetable.get('items'), list):
+        timetable['items'] = []
+
+    if not timetable.get('summary'):
+        timetable['summary'] = {
+            'total_items': len(timetable.get('items') or []),
+            'semester_breakdown': {},
+            'unique_courses': 0,
+            'unique_faculty': 0,
         }
 
-    timetable = scrape_result.get('data') or {}
+    if timetable.get('items') == [] and status_callback:
+        status_callback({
+            'status': 'sending',
+            'success': None,
+            'message': f"No classes found. Sending a no-classes email to {personal_email}",
+            'personal_email': personal_email,
+            'user_email': university_email,
+            'items': 0,
+        })
+
     if settings.get('daily_email_last_result', {}).get('job_id'):
         timetable['email_job_id'] = settings['daily_email_last_result']['job_id']
 
@@ -97,6 +171,7 @@ def send_daily_timetable_email_for_user(
         'personal_email': personal_email,
         'success': True,
         'items': len(timetable.get('items') or []),
+        'message': 'No classes found email sent' if not (timetable.get('items') or []) else 'Timetable email sent',
         'send_result': send_result,
     }
 

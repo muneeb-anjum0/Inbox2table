@@ -62,7 +62,12 @@ def _build_plain_text(timetable: Dict) -> str:
     ]
 
     if not items:
-        lines.append('No classes were found for the configured semesters.')
+        lines.extend([
+            'No Classes Found',
+            '',
+            'No timetable email matched your configured semesters for this day.',
+            'Inbox2Table will check again at the next scheduled run.',
+        ])
         return '\n'.join(lines)
 
     for item in items:
@@ -91,13 +96,14 @@ def _group_items_by_semester(items: List[Dict]) -> Dict[str, List[Dict]]:
 
 def build_timetable_email_html(timetable: Dict, university_email: str) -> str:
     items: List[Dict] = timetable.get('items') or []
+    no_classes = len(items) == 0
     summary = timetable.get('summary') or {}
     grouped = _group_items_by_semester(items)
     for semester_items in grouped.values():
         semester_items.sort(key=lambda item: _display(item.get('time')))
 
     rows_html = []
-    if not items:
+    if no_classes:
         rows_html.append(
             """
             <tr>
@@ -143,6 +149,25 @@ def build_timetable_email_html(timetable: Dict, university_email: str) -> str:
                     """
                 )
 
+    empty_state_html = ""
+    if no_classes:
+        empty_state_html = f"""
+            <div style="padding:24px 20px;background:#ffffff;">
+              <div style="border:1px solid #dbeafe;background:linear-gradient(135deg,#eff6ff 0%,#f8fafc 45%,#ecfdf5 100%);border-radius:18px;padding:24px;text-align:center;">
+                <div style="display:inline-block;padding:7px 12px;border-radius:999px;background:#ffffff;border:1px solid #bfdbfe;color:#2563eb;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">
+                  Clear schedule
+                </div>
+                <h2 style="margin:14px 0 8px;color:#0f172a;font-size:26px;line-height:1.2;">No Classes Found</h2>
+                <p style="max-width:560px;margin:0 auto;color:#475569;font-size:15px;line-height:1.55;">
+                  Inbox2Table checked your Gmail for {_escape(timetable.get('for_day', 'today'))} and did not find any matching classes for your configured semesters.
+                </p>
+                <div style="margin-top:18px;display:inline-block;padding:10px 14px;border-radius:12px;background:#ffffff;color:#0f172a;border:1px solid #e2e8f0;font-size:14px;">
+                  We will check again automatically at the next daily run.
+                </div>
+              </div>
+            </div>
+        """
+
     return f"""
     <!doctype html>
     <html>
@@ -154,6 +179,8 @@ def build_timetable_email_html(timetable: Dict, university_email: str) -> str:
               <h1 style="margin:8px 0 0;font-size:24px;line-height:1.2;">Your timetable for {_escape(timetable.get('for_day', 'today'))}</h1>
               <p style="margin:8px 0 0;color:#cbd5e1;font-size:14px;">Generated for {_escape(university_email)} · {_escape(timetable.get('for_date', ''))}</p>
             </div>
+
+            {empty_state_html}
 
             <div style="display:flex;gap:10px;flex-wrap:wrap;padding:16px 20px;background:#f8fafc;border-bottom:1px solid #e2e8f0;">
               <span style="padding:8px 10px;border-radius:999px;background:#ffffff;border:1px solid #e2e8f0;font-size:13px;"><strong>{_escape(summary.get('total_items', len(items)))}</strong> classes</span>
@@ -191,6 +218,8 @@ def build_timetable_email_html(timetable: Dict, university_email: str) -> str:
 def _build_subject(timetable: Dict) -> str:
     job_marker = timetable.get('email_job_id')
     suffix = f" [{job_marker[:8]}]" if job_marker else ""
+    if not (timetable.get('items') or []):
+        return f"Inbox2Table: No classes found for {timetable.get('for_day', 'today')}{suffix}"
     return f"Inbox2Table: timetable for {timetable.get('for_day', 'today')}{suffix}"
 
 

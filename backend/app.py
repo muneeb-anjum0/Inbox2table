@@ -832,29 +832,33 @@ def gmail_callback():
         else:
             # Desktop popup flow - use postMessage
             frontend_origin = frontend_origin_from_state or session.get('frontend_origin') or f'http://localhost:{FRONTEND_PORT}'
+            target_origins = json.dumps([
+                frontend_origin,
+                'http://localhost:3000',
+                'http://127.0.0.1:3000',
+                f'http://{LOCAL_IP}:{FRONTEND_PORT}',
+            ])
+            message_payload = json.dumps({
+                'type': 'GMAIL_AUTH_SUCCESS',
+                'user': {
+                    'id': user['id'],
+                    'email': user_email,
+                },
+            })
             return f"""
             <html>
             <body>
             <script>
             // Try to communicate with parent window using multiple target origins
-            const targetOrigins = [
-                '{frontend_origin}',
-                'http://localhost:3000',
-                'http://127.0.0.1:3000', 
-                'http://{LOCAL_IP}:{FRONTEND_PORT}'
-            ];
+            const targetOrigins = {target_origins};
             
-            const message = {{
-                type: 'GMAIL_AUTH_SUCCESS',
-                user: {{
-                    id: '{user['id']}',
-                    email: '{user_email}'
-                }}
-            }};
+            const message = {message_payload};
             
             targetOrigins.forEach(origin => {{
                 try {{
-                    window.opener.postMessage(message, origin);
+                    if (window.opener) {{
+                        window.opener.postMessage(message, origin);
+                    }}
                 }} catch (e) {{
                     console.log('Failed to post to:', origin, e);
                 }}
@@ -875,7 +879,7 @@ def gmail_callback():
         
         # Get frontend URL from the session (set when auth started)
         callback_state = request.args.get('state')
-        state_data = _pop_oauth_state(callback_state)
+        state_data = locals().get('state_data') or _pop_oauth_state(callback_state)
         frontend_origin_from_state = state_data.get('frontend_origin') if state_data else None
 
         frontend_url = frontend_origin_from_state or session.get('frontend_origin') or f'http://{LOCAL_IP}:{FRONTEND_PORT}'
@@ -919,26 +923,30 @@ def gmail_callback():
         else:
             # Desktop popup flow
             frontend_origin = frontend_origin_from_state or session.get('frontend_origin') or f'http://localhost:{FRONTEND_PORT}'
+            target_origins = json.dumps([
+                frontend_origin,
+                'http://localhost:3000',
+                'http://127.0.0.1:3000',
+                f'http://{LOCAL_IP}:{FRONTEND_PORT}',
+            ])
+            message_payload = json.dumps({
+                'type': 'GMAIL_AUTH_ERROR',
+                'error': str(e),
+            })
             return f"""
             <html>
             <body>
         <script>
         // Try to communicate with parent window using multiple target origins
-        const targetOrigins = [
-            '{frontend_origin}',
-            'http://localhost:3000',
-            'http://127.0.0.1:3000', 
-            'http://{LOCAL_IP}:{FRONTEND_PORT}'
-        ];
+        const targetOrigins = {target_origins};
         
-        const message = {{
-            type: 'GMAIL_AUTH_ERROR',
-            error: '{str(e)}'
-        }};
+        const message = {message_payload};
         
         targetOrigins.forEach(origin => {{
             try {{
-                window.opener.postMessage(message, origin);
+                if (window.opener) {{
+                    window.opener.postMessage(message, origin);
+                }}
             }} catch (e) {{
                 console.log('Failed to post to:', origin, e);
             }}

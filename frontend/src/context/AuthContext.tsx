@@ -17,6 +17,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const AUTH_POPUP_TIMEOUT_MS = 300000;
+const AUTH_POPUP_CLOSED_POLL_MS = 500;
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -34,14 +35,32 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const authTimeoutRef = React.useRef<number | null>(null);
-  const apiBaseOrigin = apiService.getBaseOrigin();
+  const authPopupCheckRef = React.useRef<number | null>(null);
+  const pendingGmailAuthRef = React.useRef<((success: boolean) => void) | null>(null);
 
-  const clearAuthTimeout = () => {
+  const clearAuthTimeout = React.useCallback(() => {
     if (authTimeoutRef.current !== null) {
       window.clearTimeout(authTimeoutRef.current);
       authTimeoutRef.current = null;
     }
-  };
+  }, []);
+
+  const clearAuthPopupCheck = React.useCallback(() => {
+    if (authPopupCheckRef.current !== null) {
+      window.clearInterval(authPopupCheckRef.current);
+      authPopupCheckRef.current = null;
+    }
+  }, []);
+
+  const finishPendingGmailAuth = React.useCallback((success: boolean) => {
+    clearAuthTimeout();
+    clearAuthPopupCheck();
+
+    if (pendingGmailAuthRef.current) {
+      pendingGmailAuthRef.current(success);
+      pendingGmailAuthRef.current = null;
+    }
+  }, [clearAuthPopupCheck, clearAuthTimeout]);
 
   useEffect(() => {
     // Ensure API base URL is detected before performing auth-related network actions
@@ -93,6 +112,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     
     // Listen for Gmail OAuth callback
     const handleGmailAuthMessage = (event: MessageEvent) => {
+      const apiBaseOrigin = apiService.getBaseOrigin();
       
       // Allow the active backend origin plus local development origins.
       const isAllowedOrigin =
@@ -105,16 +125,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (!isAllowedOrigin) {
         return;
       }
+
+      if (!event.data || typeof event.data !== 'object') {
+        return;
+      }
       
       if (event.data.type === 'GMAIL_AUTH_SUCCESS') {
-        clearAuthTimeout();
         const userData = event.data.user;
         setUser(userData);
         localStorage.setItem('user', JSON.stringify(userData));
         setLoading(false);
+        finishPendingGmailAuth(true);
       } else if (event.data.type === 'GMAIL_AUTH_ERROR') {
-        clearAuthTimeout();
         setLoading(false);
+        finishPendingGmailAuth(false);
       }
     };
     
@@ -123,16 +147,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     
     return () => {
       clearAuthTimeout();
+      clearAuthPopupCheck();
       window.removeEventListener('message', handleGmailAuthMessage);
     };
-  }, [apiBaseOrigin]);
+  }, [clearAuthPopupCheck, clearAuthTimeout, finishPendingGmailAuth]);
 
   const loginWithGmail = async (): Promise<boolean> => {
     try {
-      setLoading(true);
+      await apiService.initialize();
+
       const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
       if (isMobile) {
+        const apiBaseOrigin = apiService.getBaseOrigin();
         const mobileAuthUrl = `${apiBaseOrigin}/api/auth/gmail?redirect=1&frontend_origin=${encodeURIComponent(window.location.origin)}`;
         window.location.href = mobileAuthUrl;
         return true;
@@ -150,12 +177,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
       
       clearAuthTimeout();
-      authTimeoutRef.current = window.setTimeout(() => {
-        setLoading(false);
-        authTimeoutRef.current = null;
-      }, AUTH_POPUP_TIMEOUT_MS);
+      clearAuthPopupCheck();
 
-      return true;
+      return await new Promise<boolean>((resolve) => {
+        pendingGmailAuthRef.current = resolve;
+
+        authTimeoutRef.current = window.setTimeout(() => {
+          finishPendingGmailAuth(false);
+        }, AUTH_POPUP_TIMEOUT_MS);
+
+        authPopupCheckRef.current = window.setInterval(() => {
+          if (popup.closed) {
+            finishPendingGmailAuth(false);
+          }
+        }, AUTH_POPUP_CLOSED_POLL_MS);
+      });
     } catch (error) {
       setLoading(false);
       return false;

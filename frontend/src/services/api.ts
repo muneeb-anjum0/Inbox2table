@@ -178,7 +178,7 @@ export const apiService = {
 
   sendTestTimetableEmail: async (): Promise<ApiResponse<{ items: number; personal_email: string }>> => {
     if (rateLimiter.shouldBlock('/api/automation/send-test-timetable-email')) {
-      throw new Error('Please wait before sending another test email');
+      throw new Error('Please wait before sending another email');
     }
     const response: AxiosResponse<ApiResponse<{ items: number; personal_email: string }>> = await api.post('/api/automation/send-test-timetable-email');
     return response.data;

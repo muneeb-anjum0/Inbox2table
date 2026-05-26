@@ -1339,7 +1339,7 @@ def send_test_timetable_email():
         user_settings['daily_email_last_result'] = {
             'status': 'running',
             'success': None,
-            'message': 'Test email job is running',
+            'message': 'Mail send job is running',
             'job_id': job_id,
             'started_at': datetime.now().isoformat(),
         }
@@ -1358,24 +1358,24 @@ def send_test_timetable_email():
                     'message': (
                         f"No classes found email accepted by {result.get('send_result', {}).get('provider', 'email provider')} for {result.get('personal_email')}"
                         if result.get('success') and result.get('items') == 0
-                        else f"Test email accepted by {result.get('send_result', {}).get('provider', 'email provider')} for {result.get('personal_email')}"
+                        else f"Mail accepted by {result.get('send_result', {}).get('provider', 'email provider')} for {result.get('personal_email')}"
                         if result.get('success')
-                        else result.get('error', 'Test email failed')
+                        else result.get('error', 'Mail send failed')
                     ),
                     'finished_at': datetime.now().isoformat(),
                 })
 
                 if result.get('success'):
                     logger.info(
-                        "Test timetable email sent for %s to %s",
+                        "Manual timetable email sent for %s to %s",
                         user.get('email'),
                         result.get('personal_email'),
                     )
                 else:
-                    logger.error("Test timetable email failed for %s: %s", user.get('email'), result)
+                    logger.error("Manual timetable email failed for %s: %s", user.get('email'), result)
             except Exception as job_error:
                 logger.error(
-                    "Background test timetable email failed for %s: %s",
+                    "Background manual timetable email failed for %s: %s",
                     user.get('email'),
                     job_error,
                     exc_info=True,
@@ -1405,29 +1405,29 @@ def send_test_timetable_email():
                     **last_result,
                     'status': 'error',
                     'success': False,
-                    'message': f"Test email timed out while {stage}. Check Render logs for the stuck step.",
+                    'message': f"Mail send timed out while {stage}. Check Render logs for the stuck step.",
                     'error': f"Timed out while {stage}",
                     'finished_at': datetime.now().isoformat(),
                     'updated_at': datetime.now().isoformat(),
                 }
                 supabase_manager.save_user_settings(user['id'], latest_settings)
-                logger.error("Test timetable email timed out for %s while %s", user.get('email'), stage)
+                logger.error("Manual timetable email timed out for %s while %s", user.get('email'), stage)
             except Exception as timeout_error:
-                logger.error("Could not mark test timetable email timeout: %s", timeout_error, exc_info=True)
+                logger.error("Could not mark manual timetable email timeout: %s", timeout_error, exc_info=True)
 
         threading.Thread(target=run_email_job, daemon=True).start()
         threading.Thread(target=mark_timeout_if_still_running, daemon=True).start()
 
         return jsonify({
             'success': True,
-            'message': 'Test timetable email started. Check your inbox in a minute.',
+            'message': 'Mail send started. Check your inbox in a minute.',
             'personal_email': user_settings.get('personal_email'),
             'job_id': job_id,
             'timestamp': datetime.now().isoformat()
         }), 202
 
     except Exception as e:
-        logger.error(f"Test timetable email failed: {e}", exc_info=True)
+        logger.error(f"Manual timetable email failed: {e}", exc_info=True)
         return jsonify({
             'success': False,
             'error': str(e),

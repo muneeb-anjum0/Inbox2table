@@ -684,20 +684,20 @@ function AppContent() {
 
     if (trimmedEmail !== savedEmail) {
       setStatus('warning');
-      setMessage('Save the personal email first, then send the test email.');
+      setMessage('Save the personal email first, then send mail.');
       return;
     }
 
     try {
       setIsTestEmailSending(true);
       setStatus('loading');
-      setMessage('Running parser and sending test email...');
+      setMessage('Running parser and sending mail...');
 
       const response = await apiService.sendTestTimetableEmail();
 
       if (response.success) {
         setStatus('success');
-        setMessage(`Test email started for ${trimmedEmail}. Check your inbox in a minute.`);
+        setMessage(`Mail send started for ${trimmedEmail}. Check your inbox in a minute.`);
 
         for (let attempt = 0; attempt < 18; attempt += 1) {
           await new Promise((resolve) => window.setTimeout(resolve, 5000));
@@ -706,7 +706,7 @@ function AppContent() {
 
           if (lastResult?.status === 'scraping' || lastResult?.status === 'sending') {
             setStatus('loading');
-            setMessage(lastResult.message || 'Test email job is still running...');
+            setMessage(lastResult.message || 'Mail send is still running...');
             continue;
           }
 
@@ -716,7 +716,7 @@ function AppContent() {
             setMessage(
               sentSubject
                 ? `Accepted by ${lastResult.send_result?.provider || 'provider'}: ${sentSubject}`
-                : lastResult.message || `Test email sent to ${trimmedEmail}.`
+                : lastResult.message || `Mail sent to ${trimmedEmail}.`
             );
             await checkStatus();
             return;
@@ -724,21 +724,21 @@ function AppContent() {
 
           if (lastResult?.status === 'error') {
             setStatus('error');
-            setMessage(lastResult.error || lastResult.message || 'Test email failed. Check SMTP settings.');
+            setMessage(lastResult.error || lastResult.message || 'Mail send failed. Check SMTP settings.');
             return;
           }
         }
 
         setStatus('warning');
-        setMessage('Test email is still running or failed silently. Check Render logs for the background job.');
+        setMessage('Mail send is still running or failed silently. Check Render logs for the background job.');
       } else {
         setStatus('error');
-        setMessage(response.error || 'Failed to send test email');
+        setMessage(response.error || 'Failed to send mail');
       }
     } catch (error) {
-      console.error('Error sending test email:', error);
+      console.error('Error sending mail:', error);
       setStatus('error');
-      setMessage('Failed to send test email');
+      setMessage('Failed to send mail');
     } finally {
       setIsTestEmailSending(false);
     }
@@ -978,8 +978,8 @@ function AppContent() {
                       onClick={handleSendTestEmail}
                       disabled={isPersonalEmailSaving || isTestEmailSending || operationInProgress}
                       className="daily-email__save daily-email__save--test"
-                      title="Send test timetable email"
-                      aria-label="Send test timetable email"
+                      title="Send mail now"
+                      aria-label="Send mail now"
                     >
                       <Send className="daily-email__save-icon" aria-hidden="true" />
                     </button>
@@ -1110,11 +1110,11 @@ function AppContent() {
                     onClick={handleSendTestEmail}
                     disabled={isPersonalEmailSaving || isTestEmailSending || operationInProgress}
                     className="daily-email__save daily-email__save--test"
-                    title="Send test timetable email"
-                    aria-label="Send test timetable email"
+                    title="Send mail now"
+                    aria-label="Send mail now"
                   >
                     <Send className="daily-email__save-icon" aria-hidden="true" />
-                    <span>{isTestEmailSending ? 'Sending' : 'Test'}</span>
+                    <span>{isTestEmailSending ? 'Sending' : 'Send Mail'}</span>
                   </button>
                 </div>
               </div>

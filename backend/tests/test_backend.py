@@ -112,6 +112,57 @@ class TestSemesterConfiguration:
         
         assert response.status_code == 400
 
+
+class TestDailyEmailToggle:
+    """Test daily email enable/disable setting."""
+
+    def test_enable_daily_email_requires_personal_email(self, client, mock_supabase, mock_user):
+        mock_supabase.get_or_create_user.return_value = mock_user
+        mock_supabase.get_user_settings.return_value = {'personal_email': ''}
+
+        response = client.post('/api/config/daily-email-enabled',
+                             json={'daily_email_enabled': True},
+                             headers={'X-User-Email': 'test@example.com'})
+
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert data['success'] is False
+        mock_supabase.save_user_settings.assert_not_called()
+
+    def test_enable_daily_email_saves_true(self, client, mock_supabase, mock_user):
+        mock_supabase.get_or_create_user.return_value = mock_user
+        settings = {'personal_email': 'personal@example.com', 'daily_email_enabled': False}
+        mock_supabase.get_user_settings.return_value = settings
+        mock_supabase.save_user_settings.return_value = True
+
+        response = client.post('/api/config/daily-email-enabled',
+                             json={'daily_email_enabled': True},
+                             headers={'X-User-Email': 'test@example.com'})
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data['success'] is True
+        assert data['daily_email_enabled'] is True
+        mock_supabase.save_user_settings.assert_called_once()
+        assert mock_supabase.save_user_settings.call_args.args[1]['daily_email_enabled'] is True
+
+    def test_disable_daily_email_saves_false(self, client, mock_supabase, mock_user):
+        mock_supabase.get_or_create_user.return_value = mock_user
+        settings = {'personal_email': 'personal@example.com', 'daily_email_enabled': True}
+        mock_supabase.get_user_settings.return_value = settings
+        mock_supabase.save_user_settings.return_value = True
+
+        response = client.post('/api/config/daily-email-enabled',
+                             json={'daily_email_enabled': False},
+                             headers={'X-User-Email': 'test@example.com'})
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data['success'] is True
+        assert data['daily_email_enabled'] is False
+        mock_supabase.save_user_settings.assert_called_once()
+        assert mock_supabase.save_user_settings.call_args.args[1]['daily_email_enabled'] is False
+
 class TestScrapeEndpoint:
     """Test scraping functionality"""
     
